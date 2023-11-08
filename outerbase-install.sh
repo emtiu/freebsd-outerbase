@@ -59,28 +59,35 @@ separateSSHhostkeys=
 ### device selection
 ###
 
-# called without arguments
-[ -z $1 ] && \
+# called without argument: present drive info and exit
+if [ -z $1 ]; then
   dialog --msgbox \
-    "This script expects to be called with a device name." 0 0 && \
-  dialog --no-collapse --title "FYI: gpart show -p" --ok-label Exit \
-    --msgbox "$(gpart show -p)" 0 0 && \
+    "This script expects to be called with a device name." 0 0
+
+  dialog --no-collapse --title "FYI: \`geom disk list\`" \
+    --yes-label "Show \`gpart show -p\`" --no-label Exit \
+    --yesno "$(geom disk list)" 0 0 && \
+  dialog --no-collapse --title "FYI: \`gpart show -p $drive\`" \
+    --ok-label Exit --msgbox "$(gpart show -p)" 0 0
+
   exit
+fi
 
-# called with argument: use $1 as target device to partition
+# called with argument: ask to confirm, then partition drive $1
 drive=$1
-targetpart=$(gpart show -p $drive) || exit
+targetpart=$(geom disk list $drive; gpart show -p $drive 2>&1 || true )
 
-dialog --no-collapse --yes-label "DESTROY and use this drive" --no-label Abort \
-  --title "FYI: gpart show -p $drive" --yesno "$targetpart" 0 0 || exit
+dialog --title "FYI: \`geom disk list $drive; gpart show -p $drive\`" \
+  --no-collapse --yesno --yes-label "DESTROY and use $drive" --no-label Abort \
+  "$targetpart" 0 0 || exit
 
 
 ###
 ### partitioning
 ###
 
-gpart destroy -F $drive
-gpart create -s gpt $drive
+gpart create -s gpt $drive || \
+  { gpart destroy -F $drive && gpart create -s gpt $drive; }
 
 gpart add   -a 1M -s 10M        -l efi   -t efi          $drive
 gpart add   -a 1M -s $outersize -l outer -t freebsd-ufs  $drive
@@ -112,9 +119,9 @@ fi
 
 zpool create -o ashift=12 -m none -o altroot=/mnt $poolname /dev/gpt/inner.eli
 
-# default layout from the 13.0-RELEASE installer, taken from:
+# default layout from the 13.2-RELEASE installer, taken from:
 # https://cgit.freebsd.org/
-#              src/tree/usr.sbin/bsdinstall/scripts/zfsboot?h=releng/13.0#n141
+#              src/tree/usr.sbin/bsdinstall/scripts/zfsboot?h=releng/13.2#n141
 zfs create -o mountpoint=none $poolname/ROOT
 zfs create -o mountpoint=/    $poolname/ROOT/default
 zfs create -o mountpoint=/usr -o canmount=off $poolname/usr
