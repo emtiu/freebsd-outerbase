@@ -7,28 +7,31 @@ If a server resides on encrypted media, it's difficult to unlock it remotely aft
 Common solutions include virtualization, the serial console ([traditional](https://docs.freebsd.org/en_US.ISO8859-1/books/handbook/serialconsole-setup.html) or through a [DIY server](https://www.jpaul.me/2019/01/how-to-build-a-raspberry-pi-serial-console-server-with-ser2net/)), [IPMI](https://en.wikipedia.org/wiki/Intelligent_Platform_Management_Interface) and friends, or IP-KVM hardware (expensive [traditional](https://www.kvm-switches-online.com/vnc-kvm-switch.html) or [low-cost](https://pikvm.org/) [DIY](https://mtlynch.io/tinypilot/)).
 
 ## outer base solution
-This solution builds upon two [previous](https://github.com/Sec42/freebsd-remote-crypto/) [implementations](https://phryk.net/article/howto-freebsd-remote-bootable-crypto-setup/) of the following idea: an unencrypted barebones system (the **outer base**) boots and accepts incoming SSH connections. Over SSH, the encrypted system can be unlocked. Then, FreeBSD's `reboot -r` command is used to reboot (or more precisely: re-root the kernel) into the unlocked system (the **inner base**):
+This solution builds upon two [previous](https://github.com/Sec42/freebsd-remote-crypto/) [implementations](https://phryk.net/article/howto-freebsd-remote-bootable-crypto-setup/) of the following idea: an unencrypted barebones system (the **outer base**) boots and accepts incoming SSH connections. Over SSH, the encrypted system can be unlocked. Then, FreeBSD's `reboot -r` command is used to reboot (more precisely: re-root the kernel) into the unlocked system (the **inner base**):
 
 
-                                                                 +---------------------------+
+                                                                 .---------------------------.
                                                                  |    gpt/inner: GELI        |
-                                                                 |  +----------------------+ |
-                               +----------------+  3) unlock     |  | gpt/inner.eli: zroot | |
+                                                                 |  .----------------------. |
+                               .----------------.  3) unlock     |  | gpt/inner.eli: zroot | |
                                | gpt/outer: ufs |--------------> |  |                      | |
-    +--------------+  1) boot  |                |----------------+->|     "inner base"     | |
-    | gpt/efi: ESP |---------->|  "outer base"  |  4) reboot -r  |  +----------------------+ |
-    +--------------+           +----------------+                +---------------------------+
+    .--------------.  1) boot  |                |------------------>|     "inner base"     | |
+    | gpt/efi: ESP |---------->|  "outer base"  |  4) reboot -r  |  ·----------------------· |
+    ·--------------·           ·----------------·                ·---------------------------·
                                          Λ
                                          |
-                                  2) ssh +
+                                  2) ssh ┘
 
 ## highlights
-* comfortable unlock/reboot script with partial Boot Environments support
+* comfortable unlock/reboot script with basic Boot Environments support
 * optional encrypted swap
-* optional use of a custom-built base system for the outer base
-  * example `src.conf` for a minimal outer base system included
-* minimal requirements: UEFI boot, a stock FreeBSD bootable installer + this script
-* install script provides checks to avoid using the wrong drive
+* optional use of a custom-built base system for the outer base (example `src.conf` for a minimal outer base system included)
+* minimal requirements:
+  * an amd64 system with UEFI boot
+  * a bootable stock FreeBSD installer
+  * this script
+* install script provides hints and checks to help select the right target device
+* tested with 13.0-RELEASE on bare metal and 13.2-RELEASE in VirtualBox
 ### security and privacy considerations
 The outer base is a stock FreeBSD base install that holds no user data (with the likely exception of a public SSH key for login). However, the kernel must be shared between the outer and inner base. This means that the kernel resides on the unencrypted UFS partition with the outer base system.
 
@@ -52,18 +55,16 @@ For the question of SSH host keys, see **variables in the install script** below
 
 ## detailed description
 ### installing
-`outerbase-installer.sh` expects to be run from the shell of a stock FreeBSD installer image such as `FreeBSD-13.0-RELEASE-amd64-memstick.img`. When run without arguments, it just shows the output of `gpart show` to help in selecting the right drive and exits.
+`outerbase-installer.sh` expects to be run from the shell of a stock FreeBSD installer image such as `FreeBSD-13.2-RELEASE-amd64-memstick.img`. When run without arguments, it just shows the output of `gpart show` to help in selecting the right drive and exits.
 
 To run the installation, execute `outerbase-installer.sh` with the name of the target drive (without "`/dev/`") as the only argument. For example, to use /dev/ada0 for the installation—**which will be erased by `gpart destroy -F` in the process!**—run:
 
     sh outerbase-installer.sh ada0
 
 **In setting up the system for booting, the script expects:**
-* an amd64 machine with UEFI boot enabled
+* an amd64 machine with UEFI boot
 * no other operating systems
 * to create the machine's only EFI System Partition (ESP) on the target drive
-
-*Patches are welcome to support other configurations.*
 
 The script then proceeds to:
 1. create partitions, set up encryption, create the zpool,
@@ -107,7 +108,7 @@ All tunables are set in the first few lines of the install script.
 ### booting and unlocking
 The installer places `/root/unlock.sh` in the outer base to assist in unlocking and rebooting into the inner base.
 
-It uses `reboot -r`, which does a "soft reboot" or "re-root", as explained in the `reboot(8)` manpage of FreeBSD 13.0:
+It uses `reboot -r`, which does a "soft reboot" or "re-root", as explained in the `reboot(8)` manpage of FreeBSD 13.2:
 
 
      -r   The system kills all processes, unmounts all filesystems, mounts
@@ -120,7 +121,7 @@ When called without arguments, `/root/unlock.sh`:
 
 * prompts for the geli passphrase to unlock `gpt/inner.eli`,
 * imports the zpool without mounting any datsets (by using `zpool import -N`),
-* sets the `vfs.root.mountfrom` kernel variable (see **limited Boot Environments support** below),
+* sets the `vfs.root.mountfrom` kernel variable (see **basic Boot Environments support** below),
 * calls `reboot -r` to reboot the system into the unlocked inner base.
 
 When called with `/root/unlock.sh -n` (where `-n` means "no reboot"):
@@ -130,7 +131,7 @@ When called with `/root/unlock.sh -n` (where `-n` means "no reboot"):
 
 The inner base can then be inspected or manipulated at `/mnt`. At any later time, a manually issued `reboot -r` should still reboot into the inner base.
 
-#### limited Boot Environments support
+#### basic Boot Environments support
 There is some support for Boot Environments (BE) in the inner base system. They can be created and managed normally with `bectl(8)` or `beadm(1)`.
 
 When a BE is activated, the name of the corresponding zfs datset is set in the zpool's `bootfs` property. When a regular bootloader boots from the pool, it it looks for the system in that dataset and mounts it at `/`.
@@ -139,7 +140,7 @@ When `/root/unlock.sh` has imported the zpool that contains the inner base, it a
 
 The main difference with this setup is that `/boot` is not part of the inner base system, since it must reside on the outer base UFS partition. Therefore, `/boot` is not covered by BE protection when doing upgrades for example.
 
-Otherwise, BEs should work as expected, but haven't been exhaustively tested. *Issue reports are welcome.*
+Otherwise, BEs should work as expected, but haven't been exhaustively tested.
 
 ### characteristics of the installed systems
 These are the unique/surprising/nonstandard properties of the systems installed by this install script. For tunable options, see **variables in the install script** above. For a description of the booting process, see **installing** and **booting and unlocking** above.
@@ -157,7 +158,7 @@ The `inner` partition takes up all available space after the others are set up. 
 
 If swap is configured, it is used by the inner base only, and encrypted.
 
-The zpool containing the inner base consists of a single vdev without redundancy, created atop the `gpt/inner.eli` geom with `-o ashift=12`. The layout of the datasets is an exact replication of the default in FreeBSD 13.0-RELEASE.
+The zpool containing the inner base consists of a single vdev without redundancy, created atop the `gpt/inner.eli` geom with `-o ashift=12`. The layout of the datasets is an exact replication of the default in FreeBSD 13.2-RELEASE.
 
 The **boot loader** gets the following settings in `/boot/loader.conf`:
 
@@ -195,7 +196,7 @@ Crucially, the outer base UFS partition is mounted at `/outer`. In the inner bas
 Note that the mountpoint for the ESP is `/boot/efi`, even though `/boot` itself is a symlink. This is preferred over `/outer/boot/efi`, because `/boot/efi` is the more canonical mountpoint, and it is the same for both the outer and inner base, hopefully avoiding confusion and mistakes.
 
 ### custom minimal outer base
-Compiling your own FreeBSD base system for the outer base allows you to make it smaller and simpler, in accordance with its role as a 'login-and-unlock-only system'. A `src.conf` for such a minimal outer system is part of this repository:
+Compiling your own FreeBSD base system for the outer base allows you to make it smaller and simpler, in accordance with its role as a 'login-and-unlock-only system'. A `src.conf` for such a minimal outer system is part of this repository. The resulting sizes, as last tested for 13.0-RELEASE, are as follows:
 
 &nbsp;| base.txz | installed | with kernel | partition
 :---:|---:|---:|---:|---:
@@ -231,7 +232,7 @@ However, the writable `/tmp` partition of the `memstick.img` installer is limite
     mount -t tmpfs tmpfs /tmp/large
 
 ##### 3. on the installer image
-It's particularly convenient to put `outerbase.txz` on the bootable installer medium itself. For use with `FreeBSD-13.0-RELEASE-amd64-memstick.img`, a USB stick or SD card of 2GB or more is appropriate. After writing the image to a 2GB medium at `/dev/da0`, its partition layout as shown by `gpart show da0` should look like this:
+It's particularly convenient to put `outerbase.txz` on the bootable installer medium itself. For use with `FreeBSD-13.2-RELEASE-amd64-memstick.img`, a USB stick or SD card of 2GB or more is appropriate. After writing the image to a 2GB medium at `/dev/da0`, its partition layout as shown by `gpart show da0` should look like this:
 
     =>      1  3842047  da0  MBR  (1.8G)
             1    66584    1  efi  (33M)
@@ -257,5 +258,87 @@ in `outerbase-installer.sh` so it will find your `outerbase.txz`.
 
 Note that the installer mounts its main partition read-only. If you copy `outerbase-installer.sh` to the installer image, but then you need to edit it before running: copy it to `/tmp`, edit and run the copy.
 
+### Update procedure
+#### stock outer base
+When using a stock system as the outer base, the update procedure is as easy as calling `freebsd-update` for the outer base and inner base resepctively. While booted into the inner base, run:
+
+    # freebsd-update -b /outer fetch
+    # freebsd-update -b /outer install
+
+#### custom minimal outer base: building on the target machine
+A custom minimal outer base needs to be re-built with every update (e.g. from `13.2-RELEASE-p4` to `-p5`). The following steps describe the procedure for building and installing on the same machine. Further down, there's also a description on how to update a non-build machine.
+
+##### step 1: sources
+
+First your should have the sources on hand. Download them like so:
+
+`git clone --branch releng/13.2 https://git.FreeBSD.org/src.git /usr/src`
+
+... or simply `git pull` in `/usr/src`, if it is already populated. You can check for the correct version you're trying to update to by running:
+
+`grep -e ^REVISION -e ^BRANCH /usr/src/sys/conf/newvers.sh`
+
+##### step 2: building
+
+Then, build the system. You need to provide `make` with the `src.conf` that corresponds to your custom minimal outer base. You can specify its location like this:
+
+`make SRCCONF=/root/outerbase-src.conf buildworld`
+
+... or simply run `make buildworld` if you have the correct file in place at `/etc/src.conf` (which is assumed for the follwing commands).
+
+##### step 3: updating `/etc`
+
+Normally, `etcupdate` is meant to have a persistent database in `/var/db/etcupdate`. Here, a temporary storage location in `/tmp` used, which will be erased on reboot. This way, the operation takes longer, but leaves no clutter behind on the `/outer` partition.
+
+From `/usr/src`, run:
+
+    # etcupdate extract -D /outer/ -d /tmp/etcupdate
+    # etcupdate -p -D /outer -d /tmp/etcupdate
+
+##### step 4: installing
+
+From `/usr/src`, run:
+
+`# make DESTDIR=/outer installworld`
+
+Then complete the `etcupdate` operation:
+
+`# etcupdate -D /outer -d /tmp/etcupdate`
+
+You may now want to clean the installation of unneeded files and directories. Specifically, installing an update for the custom minimal outer base may leave behind a number of empty directories associated with unused system components. To find out which those are, run from `/usr/src`:
+
+`# make DESTDIR=/outer check-old`
+
+If the deletion list presented by the previous command makes sense, you may run the cleanup:
+
+`# make DESTDIR=/outer BATCH_DELETE_OLD_FILES=yes delete-old delete-old-libs`
+
+#### custom minimal outer base: building on a remote machine
+
+If you want to update a custom minimal outer base on a machine that cannot (or should not) build the system itself, you may use another FreeBSD machine for building, mount the source and build directories, and install it as normal. It's pretty neat, and it's been tested to work with the build machine offering its `/usr/src` and `/usr/obj` for NFSv4 mounts.
+
+For this procedure, you're going to need the correct `src.conf` in place on **both the build machine and the target machine**. You may either supply its location as in `make SRCCONF=/root/outerbase-src.conf`, or just place it at `/etc/src.conf` **on both machines** (which is assumed for the follwing commands).
+
+First, follow the above **steps 1 and 2 on the build machine**. Don't forget to have the correct `src.conf` in place. Then, on the target machine, mount the necessary directories (read-only works fine):
+
+    # mount_nfs -o nfsv4,ro buildbox:/usr/src /usr/src
+    # mount_nfs -o nfsv4,ro buildbox:/usr/obj /usr/obj
+
+Then, follow the above **steps 3 and 4 on the target machine**. If you see warnings like: `make[2] warning: /usr/src/: Read-only file system.`, these have been seen in testing and appeared to be harmless.
+
+After installing, just unmount the directories and you're done:
+
+    # umount /usr/obj
+    # umount /usr/src
+
+#### inner base
+
+The inner base can be updated as normal when booted:
+
+    # freebsd-update fetch
+    # freebsd-update install
+
+Note that `/outer/boot` and `/boot` are the same directory, so its contents will correspond to whatever update process you ran last.
+
 ## Ohrwurm
-If the name of this project didn't make you think of [this song](https://www.youtube.com/watch?v=WpIAc9by5iU) before, it will now!
+If the name of this project didn't make you think of [this song](https://www.youtube.com/watch?v=rsYPeP1XJuM) before, it will now!
