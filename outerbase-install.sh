@@ -289,7 +289,7 @@ kenv vfs.root.mountfrom="zfs:\$BOOTZFS"
 
 if [ "\$1" = "-n" ]; then
   echo; echo "$poolname is unlocked and imported with altroot=/mnt."
-  echo "To reboot into inner base later, call: reboot -r"; echo
+  echo "To use the inner base, reboot and unlock again."; echo
 else
   echo; echo "--- reboot -r happening now ---"; echo
   reboot -r
