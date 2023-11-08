@@ -319,12 +319,14 @@ If you want to update a custom minimal outer base on a machine that cannot (or s
 
 For this procedure, you're going to need the correct `src.conf` in place on **both the build machine and the target machine**. You may either supply its location as in `make SRCCONF=/root/outerbase-src.conf`, or just place it at `/etc/src.conf` **on both machines** (which is assumed for the follwing commands).
 
-First, follow the above **steps 1 and 2 on the build machine**. Don't forget to have the correct `src.conf` in place. Then, on the target machine, mount the necessary directories (read-only works fine):
+First, follow the above **steps 1 and 2 on the build machine**. Then, on the target machine, mount the necessary directories (read-only works fine):
 
     # mount_nfs -o nfsv4,ro buildbox:/usr/src /usr/src
     # mount_nfs -o nfsv4,ro buildbox:/usr/obj /usr/obj
 
-Then, follow the above **steps 3 and 4 on the target machine**. If you see warnings like: `make[2] warning: /usr/src/: Read-only file system.`, these have been seen in testing and appeared to be harmless.
+Then, follow the above **steps 3 and 4 on the target machine**. Don't forget to have the correct `src.conf` in place.
+
+If you see warnings like: `make[2] warning: /usr/src/: Read-only file system.`, these have been seen in testing and appeared to be harmless.
 
 After installing, just unmount the directories and you're done:
 
