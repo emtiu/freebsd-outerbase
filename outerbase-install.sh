@@ -78,8 +78,8 @@ drive=$1
 targetpart=$(geom disk list $drive; gpart show -p $drive 2>&1 || true )
 
 dialog --title "FYI: \`geom disk list $drive; gpart show -p $drive\`" \
-  --no-collapse --yesno --yes-label "DESTROY and use $drive" --no-label Abort \
-  "$targetpart" 0 0 || exit
+  --no-collapse --yes-label "DESTROY and use $drive" --no-label Abort \
+  --yesno "$targetpart" 0 0 || exit
 
 
 ###
@@ -335,7 +335,7 @@ if dialog --yes-label "Yes, export" --no-label "No, inspect" \
   umount -f /mnt/outer/dev
   umount -f /mnt/dev
   umount /mnt/outer
-  zpool export $poolname  
+  zpool export $poolname
   geli detach gpt/inner.eli
   exit
 fi
