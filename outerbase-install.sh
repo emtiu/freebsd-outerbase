@@ -54,6 +54,9 @@ rootSSH=set
 # this is more secure, but creates somewhat of a hassle on the client side
 separateSSHhostkeys=
 
+# if set, configure boot to BIOS+GPT, otherwise assumes UEFI+GPT. This is for
+# older systems which do not support UEFI.
+biosgpt=
 
 ###
 ### device selection
@@ -89,11 +92,19 @@ dialog --title "FYI: \`geom disk list $drive; gpart show -p $drive\`" \
 gpart create -s gpt $drive || \
   { gpart destroy -F $drive && gpart create -s gpt $drive; }
 
-gpart add   -a 1M -s 10M        -l efi   -t efi          $drive
+if [ -n "$biosgpt" ]; then
+  gpart add -a 1M -s 512k     -l gptboot -t freebsd-boot $drive
+else
+  gpart add -a 1M -s 10M        -l efi   -t efi          $drive
+fi
 gpart add   -a 1M -s $outersize -l outer -t freebsd-ufs  $drive
 [ -n "$swapsize" ] && [ "$swapsize" != "0" ] && \
   gpart add -a 1M -s $swapsize  -l swap  -t freebsd-swap $drive
 gpart add   -a 1M               -l inner -t freebsd-zfs  $drive
+if [ -n "$biosgpt" ]; then
+  gpart bootcode -b /boot/pmbr -p /boot/gptboot -i 1 $drive
+  gpart set -a bootme -i 2 $drive
+fi
 
 
 ###
@@ -119,13 +130,13 @@ fi
 
 zpool create -o ashift=12 -m none -o altroot=/mnt $poolname /dev/gpt/inner.eli
 
-# default layout from the 13.2-RELEASE installer, taken from:
+# default layout from the 14.1-RELEASE installer, taken from:
 # https://cgit.freebsd.org/
-#              src/tree/usr.sbin/bsdinstall/scripts/zfsboot?h=releng/13.2#n141
+#              src/tree/usr.sbin/bsdinstall/scripts/zfsboot?h=releng/14.1#n145
 zfs create -o mountpoint=none $poolname/ROOT
 zfs create -o mountpoint=/    $poolname/ROOT/default
+zfs create -o mountpoint=/home                $poolname/home
 zfs create -o mountpoint=/usr -o canmount=off $poolname/usr
-zfs create                                    $poolname/usr/home
 zfs create -o setuid=off                      $poolname/usr/ports
 zfs create                                    $poolname/usr/src
 zfs create -o mountpoint=/var -o canmount=off $poolname/var
@@ -183,12 +194,13 @@ chflags -h sunlink /mnt/boot
 ### efi system partition
 ###
 
-newfs_msdos /dev/gpt/efi
-mount -t msdos /dev/gpt/efi /mnt/outer/boot/efi
-mkdir -p /mnt/outer/boot/efi/EFI/BOOT
-cp /boot/loader.efi /mnt/outer/boot/efi/EFI/BOOT/BOOTX64.EFI
-umount /mnt/outer/boot/efi
-
+if [ -z "$biosgpt" ]; then
+  newfs_msdos /dev/gpt/efi
+  mount -t msdos /dev/gpt/efi /mnt/outer/boot/efi
+  mkdir -p /mnt/outer/boot/efi/EFI/BOOT
+  cp /boot/loader.efi /mnt/outer/boot/efi/EFI/BOOT/BOOTX64.EFI
+  umount /mnt/outer/boot/efi
+fi
 
 ###
 ### shared /boot and kernel
@@ -263,7 +275,13 @@ chroot /mnt/outer sysrc zfs_enable=NO
 
 cat <<EOD > /mnt/outer/etc/fstab
 /dev/gpt/outer /         ufs     rw,noatime 1 1
+EOD
+if [ -z "$biosgpt" ]; then
+  cat <<EOD >> /mnt/outer/etc/fstab
 /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
+EOD
+fi
+cat <<EOD >> /mnt/outer/etc/fstab
 tmpfs          /var/log  tmpfs   rw,size=100m,noexec          0 0
 tmpfs          /tmp      tmpfs   rw,size=500m,mode=777,nosuid 0 0
 EOD
@@ -311,7 +329,13 @@ chroot /mnt/ sysrc zfs_enable=YES
 
 cat <<EOD > /mnt/etc/fstab
 /dev/gpt/outer    /outer    ufs     rw,noatime 1 1
+EOD
+if [ -z "$biosgpt" ]; then
+  cat <<EOD >> /mnt/etc/fstab
 /dev/gpt/efi      /boot/efi msdosfs rw,noauto  1 1
+EOD
+fi
+cat <<EOD >> /mnt/etc/fstab
 tmpfs             /tmp      tmpfs   rw,mode=777,nosuid 0 0
 EOD
 
@@ -328,7 +352,7 @@ chroot /mnt/ bsdconfig || true
 ### cleanup
 ###
 
-killall dhclient
+killall dhclient || true
 
 if dialog --yes-label "Yes, export" --no-label "No, inspect" \
    --yesno "All done. Unmount all filesystems and export $poolname?" 0 0; then
