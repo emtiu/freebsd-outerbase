@@ -55,8 +55,9 @@ rootSSH=set
 separateSSHhostkeys=
 
 # if set, configure boot to BIOS+GPT, otherwise assumes UEFI+GPT. This is for
-# older systems which do not support UEFI.
-biosgpt=
+# older systems which do not support UEFI. From gptboot(8): "gptboot is used on
+# BIOS-based computers to boot from a UFS partition on a GPT-partitioned disk".
+gptboot=
 
 ###
 ### device selection
@@ -92,7 +93,7 @@ dialog --title "FYI: \`geom disk list $drive; gpart show -p $drive\`" \
 gpart create -s gpt $drive || \
   { gpart destroy -F $drive && gpart create -s gpt $drive; }
 
-if [ -n "$biosgpt" ]; then
+if [ -n "$gptboot" ]; then
   gpart add -a 1M -s 512k     -l gptboot -t freebsd-boot $drive
 else
   gpart add -a 1M -s 10M        -l efi   -t efi          $drive
@@ -101,7 +102,7 @@ gpart add   -a 1M -s $outersize -l outer -t freebsd-ufs  $drive
 [ -n "$swapsize" ] && [ "$swapsize" != "0" ] && \
   gpart add -a 1M -s $swapsize  -l swap  -t freebsd-swap $drive
 gpart add   -a 1M               -l inner -t freebsd-zfs  $drive
-if [ -n "$biosgpt" ]; then
+if [ -n "$gptboot" ]; then
   gpart bootcode -b /boot/pmbr -p /boot/gptboot -i 1 $drive
   gpart set -a bootme -i 2 $drive
 fi
@@ -194,7 +195,7 @@ chflags -h sunlink /mnt/boot
 ### efi system partition
 ###
 
-if [ -z "$biosgpt" ]; then
+if [ -z "$gptboot" ]; then
   newfs_msdos /dev/gpt/efi
   mount -t msdos /dev/gpt/efi /mnt/outer/boot/efi
   mkdir -p /mnt/outer/boot/efi/EFI/BOOT
@@ -276,7 +277,7 @@ chroot /mnt/outer sysrc zfs_enable=NO
 cat <<EOD > /mnt/outer/etc/fstab
 /dev/gpt/outer /         ufs     rw,noatime 1 1
 EOD
-if [ -z "$biosgpt" ]; then
+if [ -z "$gptboot" ]; then
   cat <<EOD >> /mnt/outer/etc/fstab
 /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
 EOD
@@ -330,7 +331,7 @@ chroot /mnt/ sysrc zfs_enable=YES
 cat <<EOD > /mnt/etc/fstab
 /dev/gpt/outer    /outer    ufs     rw,noatime 1 1
 EOD
-if [ -z "$biosgpt" ]; then
+if [ -z "$gptboot" ]; then
   cat <<EOD >> /mnt/etc/fstab
 /dev/gpt/efi      /boot/efi msdosfs rw,noauto  1 1
 EOD
