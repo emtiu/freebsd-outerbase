@@ -1,6 +1,6 @@
 #!/bin/sh
 
-### version 0.1
+### version 0.2
 
 ### usage
 #
@@ -59,6 +59,7 @@ separateSSHhostkeys=
 # BIOS-based computers to boot from a UFS partition on a GPT-partitioned disk".
 gptboot=
 
+
 ###
 ### device selection
 ###
@@ -102,9 +103,21 @@ gpart add   -a 1M -s $outersize -l outer -t freebsd-ufs  $drive
 [ -n "$swapsize" ] && [ "$swapsize" != "0" ] && \
   gpart add -a 1M -s $swapsize  -l swap  -t freebsd-swap $drive
 gpart add   -a 1M               -l inner -t freebsd-zfs  $drive
+
+
+###
+### boot code
+###
+
 if [ -n "$gptboot" ]; then
   gpart bootcode -b /boot/pmbr -p /boot/gptboot -i 1 $drive
   gpart set -a bootme -i 2 $drive
+else
+  newfs_msdos /dev/gpt/efi
+  mount -t msdos /dev/gpt/efi /mnt/outer/boot/efi
+  mkdir -p /mnt/outer/boot/efi/EFI/BOOT
+  cp /boot/loader.efi /mnt/outer/boot/efi/EFI/BOOT/BOOTX64.EFI
+  umount /mnt/outer/boot/efi
 fi
 
 
@@ -192,18 +205,6 @@ chflags -h sunlink /mnt/boot
 
 
 ###
-### efi system partition
-###
-
-if [ -z "$gptboot" ]; then
-  newfs_msdos /dev/gpt/efi
-  mount -t msdos /dev/gpt/efi /mnt/outer/boot/efi
-  mkdir -p /mnt/outer/boot/efi/EFI/BOOT
-  cp /boot/loader.efi /mnt/outer/boot/efi/EFI/BOOT/BOOTX64.EFI
-  umount /mnt/outer/boot/efi
-fi
-
-###
 ### shared /boot and kernel
 ###
 
@@ -274,15 +275,13 @@ fi
 # locked by geli anyway. It's no problem to later import the pool by unlock.sh
 chroot /mnt/outer sysrc zfs_enable=NO
 
-cat <<EOD > /mnt/outer/etc/fstab
-/dev/gpt/outer /         ufs     rw,noatime 1 1
-EOD
 if [ -z "$gptboot" ]; then
   cat <<EOD >> /mnt/outer/etc/fstab
 /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
 EOD
 fi
 cat <<EOD >> /mnt/outer/etc/fstab
+/dev/gpt/outer /         ufs     rw,noatime 1 1
 tmpfs          /var/log  tmpfs   rw,size=100m,noexec          0 0
 tmpfs          /tmp      tmpfs   rw,size=500m,mode=777,nosuid 0 0
 EOD
@@ -328,15 +327,13 @@ chroot /mnt/outer/ bsdconfig || true
 # upon `reboot -r`, the pool is already imported. this ensures `zfs mount -a`
 chroot /mnt/ sysrc zfs_enable=YES
 
-cat <<EOD > /mnt/etc/fstab
-/dev/gpt/outer    /outer    ufs     rw,noatime 1 1
-EOD
 if [ -z "$gptboot" ]; then
   cat <<EOD >> /mnt/etc/fstab
 /dev/gpt/efi      /boot/efi msdosfs rw,noauto  1 1
 EOD
 fi
 cat <<EOD >> /mnt/etc/fstab
+/dev/gpt/outer    /outer    ufs     rw,noatime 1 1
 tmpfs             /tmp      tmpfs   rw,mode=777,nosuid 0 0
 EOD
 
