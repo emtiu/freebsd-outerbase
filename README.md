@@ -22,6 +22,11 @@ This solution builds upon two [previous](https://github.com/Sec42/freebsd-remote
                                          |
                                   2) ssh ┘
 
+## update history
+* **2024-08**: version 0.2, now supports BIOS boot, thanks @foudfou
+* **2023-11**: first documented update procedure for self-compiled custom outer base
+* **2021-04**: version 0.1, initial release
+
 ## highlights
 * comfortable unlock/reboot script with basic Boot Environments support
 * optional encrypted swap
