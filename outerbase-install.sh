@@ -114,10 +114,10 @@ if [ -n "$gptboot" ]; then
   gpart set -a bootme -i 2 $drive
 else
   newfs_msdos /dev/gpt/efi
-  mount -t msdos /dev/gpt/efi /mnt/outer/boot/efi
-  mkdir -p /mnt/outer/boot/efi/EFI/BOOT
-  cp /boot/loader.efi /mnt/outer/boot/efi/EFI/BOOT/BOOTX64.EFI
-  umount /mnt/outer/boot/efi
+  mount -t msdos /dev/gpt/efi /mnt/
+  mkdir -p /mnt/EFI/BOOT
+  cp /boot/loader.efi /mnt/EFI/BOOT/BOOTX64.EFI
+  umount /mnt/
 fi
 
 
