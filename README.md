@@ -27,11 +27,11 @@ This solution builds upon two [previous](https://github.com/Sec42/freebsd-remote
 * optional encrypted swap
 * optional use of a custom-built base system for the outer base (example `src.conf` for a minimal outer base system included)
 * minimal requirements:
-  * an amd64 system with UEFI or BIOS boot
-  * a bootable stock FreeBSD installer
+  * an amd64 system (UEFI or BIOS boot supported)
+  * a bootable stock FreeBSD installer (e.g. DVD or memstick)
   * this script
 * install script provides hints and checks to help select the right target device
-* tested with 14.1-RELEASE and older releases on bare metal and in VirtualBox
+* tested on bare metal and in VirtualBox with FreeBSD from 13.0-RELEASE to 14.1-RELEASE
 ### security and privacy considerations
 The outer base is a stock FreeBSD base install that holds no user data (with the likely exception of a public SSH key for login). However, the kernel must be shared between the outer and inner base. This means that the kernel resides on the unencrypted UFS partition with the outer base system.
 
@@ -77,6 +77,11 @@ When all is done without errors, the system can be rebooted (with the installer 
 
 #### variables in the install script
 All tunables are set in the first few lines of the install script.
+
+**`gptboot`** can be empty or contain a string:
+
+* If empty, the system will be set up for UEFI boot, with FreeBSD's default `loader.efi` installed as `BOOTX64.EFI`.
+* If set to a string, the system will be set up for BIOS/MBR boot, with a Master Boot Record and a `freebsd-boot` partition written to the target drive.
 
 **`hostname`** and **`poolname`** are self-explanatory.
 
