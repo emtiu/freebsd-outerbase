@@ -27,11 +27,11 @@ This solution builds upon two [previous](https://github.com/Sec42/freebsd-remote
 * optional encrypted swap
 * optional use of a custom-built base system for the outer base (example `src.conf` for a minimal outer base system included)
 * minimal requirements:
-  * an amd64 system with UEFI boot
-  * a bootable stock FreeBSD installer
+  * an amd64 system (UEFI or BIOS boot supported)
+  * a bootable stock FreeBSD installer (e.g. DVD or memstick)
   * this script
 * install script provides hints and checks to help select the right target device
-* tested with 13.0-RELEASE on bare metal and 13.2-RELEASE in VirtualBox
+* tested on bare metal and in VirtualBox with FreeBSD from 13.0-RELEASE to 14.1-RELEASE
 ### security and privacy considerations
 The outer base is a stock FreeBSD base install that holds no user data (with the likely exception of a public SSH key for login). However, the kernel must be shared between the outer and inner base. This means that the kernel resides on the unencrypted UFS partition with the outer base system.
 
@@ -62,7 +62,7 @@ To run the installation, execute `outerbase-installer.sh` with the name of the t
     sh outerbase-installer.sh ada0
 
 **In setting up the system for booting, the script expects:**
-* an amd64 machine with UEFI boot
+* an amd64 machine with UEFI or BIOS boot
 * no other operating systems
 * to create the machine's only EFI System Partition (ESP) on the target drive
 
@@ -78,6 +78,11 @@ When all is done without errors, the system can be rebooted (with the installer 
 #### variables in the install script
 All tunables are set in the first few lines of the install script.
 
+**`gptboot`** can be empty or contain a string:
+
+* If empty, the system will be set up for UEFI boot, with FreeBSD's default `loader.efi` installed as `BOOTX64.EFI`.
+* If set to a string, the system will be set up for BIOS/MBR boot, with a Master Boot Record and a `freebsd-boot` partition written to the target drive.
+
 **`hostname`** and **`poolname`** are self-explanatory.
 
 **`rootpw`** can be empty or contain a string:
@@ -88,7 +93,7 @@ All tunables are set in the first few lines of the install script.
 **`gelipassphrase`** can be empty or contain a string:
 
 * If empty, `geli` will ask for the passphrase a total of three times (twice for `geli init` and once for `geli attach`).
-* If set to a string, it will be used as the passphrase for the encryption of the inner base partition. For a passphrase that contains spaces, the argument should be enclosed in quotes: `gelipassphrase="test 123"` 
+* If set to a string, it will be used as the passphrase for the encryption of the inner base partition. For a passphrase that contains spaces, the argument should be enclosed in quotes: `gelipassphrase="test 123"`
 
 **`swapsize`** sets the size of the swap partition. Its value is passed to `gpart create -s`. If empty or set to `0`, no swap partition is created, and no swap entry is placed in the inner base's `/etc/fstab`.
 
@@ -148,12 +153,12 @@ These are the unique/surprising/nonstandard properties of the systems installed 
 The **target drive** it set up as follows (using a 75GB disk at `/dev/ada0` as example):
 
          ada0     (75G) type: GPT
-         
+
          ada0p1   (10M) type: efi           label: efi
          ada0p2    (2G) type: freebsd-ufs   label: outer
          ada0p3    (4G) type: freebsd-swap  label: swap
          ada0p4   (69G) type: freebsd-zfs   label: inner
-  
+
 The `inner` partition takes up all available space after the others are set up. The install script aligns partitions on 1MB boundaries.
 
 If swap is configured, it is used by the inner base only, and encrypted.
