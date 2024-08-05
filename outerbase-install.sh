@@ -1,6 +1,6 @@
 #!/bin/sh
 
-### version 0.2
+### version 0.3
 
 ### usage
 #
@@ -59,65 +59,106 @@ separateSSHhostkeys=
 # BIOS-based computers to boot from a UFS partition on a GPT-partitioned disk".
 gptboot=
 
+# if set, skip partitioning entirely and rely on drives already configured
+# to install the inner and outer base into. This allows for custom encryption,
+# more complex zpool geometries, and even a GEOM-mirrored (gmirror) outer base.
+customdrives=
+# for this to work, several conditions must be met before running this script:
+#   1) bootcode already installed
+#   2) a zpool named as in $poolname already imported with -o altroot=/mnt
+#   3) a device name for the outer base to be mounted at /mnt/outer
+outerbasedevice=
+#   4) fstabs for outer and inner base at the locations specified here:
+customfstabouter=
+customfstabinner=
+#   5) boot/loader.conf at the locations specified here:
+bootloaderconf=
+
 
 ###
 ### device selection
 ###
 
-# called without argument: present drive info and exit
-if [ -z $1 ]; then
-  dialog --msgbox \
-    "This script expects to be called with a device name." 0 0
+if [ -z "$customdrives" ]; then
 
-  dialog --no-collapse --title "FYI: \`geom disk list\`" \
-    --yes-label "Show \`gpart show -p\`" --no-label Exit \
-    --yesno "$(geom disk list)" 0 0 && \
-  dialog --no-collapse --title "FYI: \`gpart show -p $drive\`" \
-    --ok-label Exit --msgbox "$(gpart show -p)" 0 0
+  # called without argument: present drive info and exit
+  if [ -z $1 ]; then
+    dialog --msgbox \
+      "This script expects to be called with a device name." 0 0
 
-  exit
+    dialog --no-collapse --title "FYI: \`geom disk list\`" \
+      --yes-label "Show \`gpart show -p\`" --no-label Exit \
+      --yesno "$(geom disk list)" 0 0 && \
+    dialog --no-collapse --title "FYI: \`gpart show -p $drive\`" \
+      --ok-label Exit --msgbox "$(gpart show -p)" 0 0
+
+    exit
+  fi
+
+  # called with argument: ask to confirm, then partition drive $1
+  drive=$1
+  targetpart=$(geom disk list $drive; gpart show -p $drive 2>&1 || true )
+
+  dialog --title "FYI: \`geom disk list $drive; gpart show -p $drive\`" \
+    --no-collapse --yes-label "DESTROY and use $drive" --no-label Abort \
+    --yesno "$targetpart" 0 0 || exit
+
+else
+
+  # customdrives: verify conditions as explained above
+  zpool list -H $poolname        # fails if pool is not imported
+  [ -e "$outerbasedevice" ]      # fails if outer base device does not exist
+  [ -f "$customfstabouter" ]     # fails if no prepared fstab found
+  [ -f "$customfstabinner" ]     # fails if no prepared fstab found
+  [ -f "$bootloaderconf" ]       # fails if no prepared loader.conf found
+
+  # if tests passed: verify to continue
+  dialog --title "FYI: zpool list -v $poolname" \
+    --no-collapse --yes-label "Proceed with install" --no-label Abort \
+    --yesno "$(zpool list -v $poolname)" 0 0 || exit
+
 fi
-
-# called with argument: ask to confirm, then partition drive $1
-drive=$1
-targetpart=$(geom disk list $drive; gpart show -p $drive 2>&1 || true )
-
-dialog --title "FYI: \`geom disk list $drive; gpart show -p $drive\`" \
-  --no-collapse --yes-label "DESTROY and use $drive" --no-label Abort \
-  --yesno "$targetpart" 0 0 || exit
 
 
 ###
 ### partitioning
 ###
 
-gpart create -s gpt $drive || \
-  { gpart destroy -F $drive && gpart create -s gpt $drive; }
+if [ -z "$customdrives" ]; then
 
-if [ -n "$gptboot" ]; then
-  gpart add -a 1M -s 512k     -l gptboot -t freebsd-boot $drive
-else
-  gpart add -a 1M -s 10M        -l efi   -t efi          $drive
+  gpart create -s gpt $drive || \
+    { gpart destroy -F $drive && gpart create -s gpt $drive; }
+
+  if [ -n "$gptboot" ]; then
+    gpart add -a 1M -s 512k     -l gptboot -t freebsd-boot $drive
+  else
+    gpart add -a 1M -s 10M        -l efi   -t efi          $drive
+  fi
+  gpart add   -a 1M -s $outersize -l outer -t freebsd-ufs  $drive
+  [ -n "$swapsize" ] && [ "$swapsize" != "0" ] && \
+    gpart add -a 1M -s $swapsize  -l swap  -t freebsd-swap $drive
+  gpart add   -a 1M               -l inner -t freebsd-zfs  $drive
+
 fi
-gpart add   -a 1M -s $outersize -l outer -t freebsd-ufs  $drive
-[ -n "$swapsize" ] && [ "$swapsize" != "0" ] && \
-  gpart add -a 1M -s $swapsize  -l swap  -t freebsd-swap $drive
-gpart add   -a 1M               -l inner -t freebsd-zfs  $drive
 
 
 ###
 ### boot code
 ###
 
-if [ -n "$gptboot" ]; then
-  gpart bootcode -b /boot/pmbr -p /boot/gptboot -i 1 $drive
-  gpart set -a bootme -i 2 $drive
-else
-  newfs_msdos /dev/gpt/efi
-  mount -t msdos /dev/gpt/efi /mnt/
-  mkdir -p /mnt/EFI/BOOT
-  cp /boot/loader.efi /mnt/EFI/BOOT/BOOTX64.EFI
-  umount /mnt/
+if [ -z "$customdrives" ]; then
+
+  if [ -n "$gptboot" ]; then
+    gpart bootcode -b /boot/pmbr -p /boot/gptboot -i 1 $drive
+    gpart set -a bootme -i 2 $drive
+  else
+    newfs_msdos /dev/gpt/efi
+    mount -t msdos /dev/gpt/efi /mnt/
+    mkdir -p /mnt/EFI/BOOT
+    cp /boot/loader.efi /mnt/EFI/BOOT/BOOTX64.EFI
+    umount /mnt/
+  fi
+
 fi
 
 
@@ -125,24 +166,30 @@ fi
 ### encryption
 ###
 
-if [ -n "$gelipassphrase" ]; then
-  echo $gelipassphrase | geli init   -J - /dev/gpt/inner
-  echo $gelipassphrase | geli attach -j - /dev/gpt/inner
-else
-  echo "Enter geli passphrase to initialize inner.eli:"
-  geli init /dev/gpt/inner
-  echo "Enter geli passphrase again to attach inner.eli:"
-  geli attach /dev/gpt/inner
-fi
+if [ -z "$customdrives" ]; then
 
-# encrypted swap defined in /etc/fstab needs no initialization
+  if [ -n "$gelipassphrase" ]; then
+    echo $gelipassphrase | geli init   -J - /dev/gpt/inner
+    echo $gelipassphrase | geli attach -j - /dev/gpt/inner
+  else
+    echo "Enter geli passphrase to initialize inner.eli:"
+    geli init /dev/gpt/inner
+    echo "Enter geli passphrase again to attach inner.eli:"
+    geli attach /dev/gpt/inner
+  fi
+
+  # encrypted swap defined in /etc/fstab needs no initialization
+
+fi
 
 
 ###
 ### inner zfs
 ###
 
-zpool create -o ashift=12 -m none -o altroot=/mnt $poolname /dev/gpt/inner.eli
+if [ -z "$customdrives" ]; then
+  zpool create -o ashift=12 -m none -o altroot=/mnt $poolname /dev/gpt/inner.eli
+fi
 
 # default layout from the 14.1-RELEASE installer, taken from:
 # https://cgit.freebsd.org/
@@ -165,12 +212,16 @@ zfs create -o setuid=off                      $poolname/var/tmp
 ### confirm disk setup
 ###
 
-if ! dialog --no-collapse --yes-label Install --no-label Abort \
-  --yesno "$(gpart show -pl $drive; ls -lt /dev/gpt; echo; zfs list)" 0 0; then
-  echo; echo "To start over, run the following commands:"; echo
-  echo " # zpool export $poolname"
-  echo " # geli detach gpt/inner.eli"; echo
-  exit
+if [ -z "$customdrives" ]; then
+
+  if ! dialog --no-collapse --yes-label Install --no-label Abort \
+    --yesno "$(gpart show -pl $drive; ls -lt /dev/gpt; echo; zfs list)" 0 0; then
+    echo; echo "To start over, run the following commands:"; echo
+    echo " # zpool export $poolname"
+    echo " # geli detach gpt/inner.eli"; echo
+    exit
+  fi
+
 fi
 
 
@@ -178,9 +229,14 @@ fi
 ### outer filesystem
 ###
 
-newfs -m2 /dev/gpt/outer
 mkdir /mnt/outer
-mount /dev/gpt/outer /mnt/outer
+
+if [ -z "$customdrives" ]; then
+  outerbasedevice=/dev/gpt/outer
+fi
+
+newfs -m2 $outerbasedevice
+mount $outerbasedevice /mnt/outer
 
 
 ###
@@ -210,12 +266,20 @@ chflags -h sunlink /mnt/boot
 
 tar -xvpPf /usr/freebsd-dist/kernel.txz -C /mnt/outer
 
-cat <<EOD >> /mnt/outer/boot/loader.conf
+if [ -z "$customdrives" ]; then
+
+  cat <<EOD >> /mnt/outer/boot/loader.conf
 autoboot_delay="4"
 vfs.root.mountfrom="ufs:/dev/gpt/outer"
 geom_eli_load="YES"
 zfs_load="YES"
 EOD
+
+else
+
+  cat $bootloaderconf >> /mnt/outer/boot/loader.conf
+
+fi
 
 
 ###
@@ -275,17 +339,25 @@ fi
 # locked by geli anyway. It's no problem to later import the pool by unlock.sh
 chroot /mnt/outer sysrc zfs_enable=NO
 
-if [ -z "$gptboot" ]; then
-  cat <<EOD >> /mnt/outer/etc/fstab
+if [ -z "$customdrives" ]; then
+
+  if [ -z "$gptboot" ]; then
+    cat <<EOD >> /mnt/outer/etc/fstab
 /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
 EOD
-fi
-cat <<EOD >> /mnt/outer/etc/fstab
+  fi
+  cat <<EOD >> /mnt/outer/etc/fstab
 /dev/gpt/outer /         ufs     rw,noatime 1 1
 tmpfs          /var/log  tmpfs   rw,size=100m,noexec          0 0
 tmpfs          /tmp      tmpfs   rw,size=500m,mode=777,nosuid 0 0
 EOD
 # the outer base doesn't get swap, as there should be no need for it
+
+else
+
+  cat $customfstabouter >> /mnt/outer/etc/fstab
+
+fi
 
 cat <<EOD > /mnt/outer/root/unlock.sh
 #!/bin/sh
@@ -327,19 +399,26 @@ chroot /mnt/outer/ bsdconfig || true
 # upon `reboot -r`, the pool is already imported. this ensures `zfs mount -a`
 chroot /mnt/ sysrc zfs_enable=YES
 
-if [ -z "$gptboot" ]; then
-  cat <<EOD >> /mnt/etc/fstab
+if [ -z "$customdrives" ]; then
+
+  if [ -z "$gptboot" ]; then
+    cat <<EOD >> /mnt/etc/fstab
 /dev/gpt/efi      /boot/efi msdosfs rw,noauto  1 1
 EOD
-fi
-cat <<EOD >> /mnt/etc/fstab
+  fi
+  cat <<EOD >> /mnt/etc/fstab
 /dev/gpt/outer    /outer    ufs     rw,noatime 1 1
 tmpfs             /tmp      tmpfs   rw,mode=777,nosuid 0 0
 EOD
 
-[ -n "$swapsize" ] && [ "$swapsize" != "0" ] && cat <<EOD >> /mnt/etc/fstab
+  [ -n "$swapsize" ] && [ "$swapsize" != "0" ] && cat <<EOD >> /mnt/etc/fstab
 /dev/gpt/swap.eli none      swap    sw 0 0
 EOD
+else
+
+  cat $customfstabinner >> /mnt/etc/fstab
+
+fi
 
 dialog --msgbox "Now editing _inner base_ configuration." 0 0
 mount -t devfs devfs /mnt/dev
@@ -358,7 +437,11 @@ if dialog --yes-label "Yes, export" --no-label "No, inspect" \
   umount -f /mnt/dev
   umount /mnt/outer
   zpool export $poolname
-  geli detach gpt/inner.eli
+  if [ -z "$customdrives" ]; then
+    geli detach gpt/inner.eli
+  else
+    echo; echo "!!! Don't forget to tweak /mnt/outer/root/unlock.sh !!!"; echo
+  fi
   exit
 fi
 
@@ -376,3 +459,7 @@ echo
 echo "# zpool import -Nf $poolname"
 echo
 echo "... and just reboot."; echo
+
+if [ -n "$customdrives" ]; then
+  echo; echo "!!! Don't forget to tweak /mnt/outer/root/unlock.sh !!!"; echo
+fi
