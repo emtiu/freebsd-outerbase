@@ -69,12 +69,12 @@ To run the installation, execute `outerbase-installer.sh` with the name of the t
 **In setting up the system for booting, the script expects:**
 * an amd64 machine with UEFI or BIOS boot
 * no other operating systems
-* to create the machine's only EFI System Partition (ESP) on the target drive
+* to create the machine's only bootable partition on the target drive
 
 The script then proceeds to:
 1. create partitions, set up encryption, create the zpool,
 2. create file systems and zfs datsets,
-2. install the outer base, inner base and ESP,
+2. install the outer base, inner base and boot partition,
 3. configure the outer and inner base (see below),
 4. open a `chroot`'ed `bsdconfig` for both outer and inner base.
 
@@ -189,7 +189,7 @@ The **outer base** is a stock FreeBSD base system (except when using a **custom 
 
 The script to unlock the inner base and reboot into it is placed at `/root/unlock.sh` (see **booting and unlocking** above).
 
-This is `/etc/fstab` for the outer base. Note the `noauto` entry for the ESP and the size-limited `tmpfs` entries:
+This is `/etc/fstab` for the outer base in a UEFI install. Note the `noauto` entry for the ESP and the size-limited `tmpfs` entries:
 
     /dev/gpt/outer /         ufs     rw,noatime 1 1
     /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
@@ -202,7 +202,7 @@ Both **outer base and inner base** share the same host id. This avoids complaint
 
 The install script also creates SSH host keys (either identical or separate for inner and outer base, see **variables in the install script** above) and sets `sshd_enable=YES` for both outer and inner base. Optionally, `PermitRootLogin` is set to `yes` in `/etc/ssh/sshd_config`.
 
-The **inner base** has `zfs_enable=YES` set to ensure `zfs mount -a` is run on boot. This is `/etc/fstab` for the inner base:
+The **inner base** has `zfs_enable=YES` set to ensure `zfs mount -a` is run on boot. This is `/etc/fstab` for the inner base in a UEFI install:
 
     /dev/gpt/outer    /outer    ufs     rw,noatime 1 1
     /dev/gpt/efi      /boot/efi msdosfs rw,noauto  1 1
