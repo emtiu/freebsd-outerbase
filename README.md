@@ -206,12 +206,12 @@ Crucially, the outer base UFS partition is mounted at `/outer`. In the inner bas
 Note that the mountpoint for the ESP is `/boot/efi`, even though `/boot` itself is a symlink. This is preferred over `/outer/boot/efi`, because `/boot/efi` is the more canonical mountpoint, and it is the same for both the outer and inner base, hopefully avoiding confusion and mistakes.
 
 ### custom minimal outer base
-Compiling your own FreeBSD base system for the outer base allows you to make it smaller and simpler, in accordance with its role as a 'login-and-unlock-only system'. A `src.conf` for such a minimal outer system is part of this repository. The resulting sizes, as last tested for 13.0-RELEASE, are as follows:
+Compiling your own FreeBSD base system for the outer base allows you to make it smaller and simpler, in accordance with its role as a 'login-and-unlock-only system'. A `src.conf` for such a minimal outer system is part of this repository. The resulting sizes are as follows:
 
 &nbsp;| base.txz | installed | with kernel | partition
 :---:|---:|---:|---:|---:
-13.0-RELEASE|181M|972M|1109M|1600M
-this `src.conf`|50M|244M|381M|800M
+`src.conf` 14.1|63M|322M|516M|1000M
+stock 14.1|199M|973M|1166M|1600M
 
 The recommended partition size takes into account that upgrades require some free space, including for two kernels to coexist.
 
