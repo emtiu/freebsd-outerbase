@@ -80,13 +80,21 @@ The script then proceeds to:
 
 When all is done without errors, the system can be rebooted (with the installer medium removed) and should boot into the outer base.
 
-#### variables in the install script
-All tunables are set in the first few lines of the install script.
+#### install script variables: install options
+At the top of the install script, you'll find options for different ways of installation:
 
 **`gptboot`** can be empty or contain a string:
 
 * If empty, the system will be set up for UEFI boot, with FreeBSD's default `loader.efi` installed as `BOOTX64.EFI`.
 * If set to a string, the system will be set up for BIOS/MBR boot, with a Master Boot Record and a `freebsd-boot` partition written to the target drive.
+
+**`customdrives`** and its associated options are an advanced option to support more customized installations. The idea is to install an outer and inner base, but in a **_“bring your own zpool”_** kind of way: The install script skips all partitioning and encryption setup, and just installs into an existing outer base device and zpool.
+
+* [This feature is documented in detail in customdrives.md.](customdrives.md)
+
+#### install script variables: system properties
+
+Below the install options, you can customize the system to be installed.
 
 **`hostname`** and **`poolname`** are self-explanatory.
 
