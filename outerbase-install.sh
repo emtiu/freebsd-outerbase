@@ -13,7 +13,32 @@
 set -e
 
 ###
-### knobs
+### install options
+###
+
+# if set, configure boot to BIOS+GPT, otherwise assumes UEFI+GPT. This is for
+# older systems which do not support UEFI. From gptboot(8): "gptboot is used on
+# BIOS-based computers to boot from a UFS partition on a GPT-partitioned disk".
+gptboot=
+
+# if set, skip partitioning entirely and rely on drives already configured
+# to install the inner and outer base into. This allows for custom encryption,
+# more complex zpool geometries, and even a GEOM-mirrored (gmirror) outer base.
+customdrives=
+# for this to work, several conditions must be met before running this script:
+#   1) bootcode already installed
+#   2) a zpool named as in $poolname already imported with -o altroot=/mnt
+#   3) a device name for the outer base to be mounted at /mnt/outer
+outerbasedevice=
+#   4) fstabs for outer and inner base at the locations specified here:
+customfstabouter=
+customfstabinner=
+#   5) boot/loader.conf at the locations specified here:
+bootloaderconf=
+
+
+###
+### system properties
 ###
 
 hostname=vulcan
@@ -53,26 +78,6 @@ rootSSH=set
 # if set, ensure that inner and outer base have distinct SSH host keys
 # this is more secure, but creates somewhat of a hassle on the client side
 separateSSHhostkeys=
-
-# if set, configure boot to BIOS+GPT, otherwise assumes UEFI+GPT. This is for
-# older systems which do not support UEFI. From gptboot(8): "gptboot is used on
-# BIOS-based computers to boot from a UFS partition on a GPT-partitioned disk".
-gptboot=
-
-# if set, skip partitioning entirely and rely on drives already configured
-# to install the inner and outer base into. This allows for custom encryption,
-# more complex zpool geometries, and even a GEOM-mirrored (gmirror) outer base.
-customdrives=
-# for this to work, several conditions must be met before running this script:
-#   1) bootcode already installed
-#   2) a zpool named as in $poolname already imported with -o altroot=/mnt
-#   3) a device name for the outer base to be mounted at /mnt/outer
-outerbasedevice=
-#   4) fstabs for outer and inner base at the locations specified here:
-customfstabouter=
-customfstabinner=
-#   5) boot/loader.conf at the locations specified here:
-bootloaderconf=
 
 
 ###
