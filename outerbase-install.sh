@@ -31,9 +31,9 @@ gelipassphrase=
 # leave empty or set to 0 to disable swap
 swapsize=2G
 
-# size of the outer base UFS partition. rule of thumb:
+# size of the outer base UFS partition. recommendation:
 # 1600M - stock base system
-#  800M - custom minimal base
+# 1000M - custom minimal base
 # add space for larger custom kernels or multiple kernels as needed
 outersize=1600M
 
