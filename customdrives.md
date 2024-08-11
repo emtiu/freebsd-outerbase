@@ -41,15 +41,82 @@ I doubt that anyone in the world besides myself will ever do this, but if you in
 
 ### Fully Mirrored Two-Drive System
 
-general description, capabilities
+This system uses two mirrored SSDs in order to be able to survive the failure of one SSD, and still continue working.
+
+Obviously, there are several ways to "hardware-RAID" (or rather, "BIOS-raid") such a configuration with minimal hassle. However, in keeping with the spirit of it, this system achieves the mirroring by nailing extra legs onto freebsd-outerbase.
+
+This system has two identically-sized SSDs, where the outer base is mirrored by GEOM and formatted to UFS, while the inner base is a mirror of tow GELI-encrypted partitions.
+
+    .--------- SSD 1 ----------.                .--------- SSD 2 ----------.
+    | .----------------------. |                | .----------------------. |
+    | |       gpt/efi0       | |                | |       gpt/efi1       | |
+    | |      ESP: FAT32      | |                | |      ESP: FAT32      | |
+    | |      loader.efi      | |                | |      loader.efi      | |
+    | ·----------------------· |                | ·----------------------· |
+    |                          |                |                          |
+    | .----------------------. |                | .----------------------. |
+    | |     gpt/swap0.eli    | |                | |     gpt/swap1.eli    | |
+    | |         swap         | |                | |         swap         | |
+    | ·----------------------· |                | ·----------------------· |
+    |                          |                |                          |
+    | .----------------------. |                | .----------------------. |
+    | |      gpt/outer0      | |                | |      gpt/outer1      | |
+    | |         UFS         <------ gmirror ------->        UFS          | |
+    | |      outer base      | |  mirror/outer  | |      outer base      | |
+    | ·----------------------· |                | ·----------------------· |
+    |                          |                |                          |
+    | .----------------------. |                | .----------------------. |
+    | |      gpt/inner0      | |                | |      gpt/inner1      | |
+    | |         GELI         | |                | |         GELI         | |
+    | | .------------------. | |                | | .------------------. | |
+    | | |  gpt/inner0.eli  | | |                | | |  gpt/inner0.eli  | | |
+    | | |       ZFS       <------ zfs mirror -------->      ZFS        | | |
+    | | |    inner base    | |       zroot      | | |    inner base    | | |
+    | | ·------------------· | |                | | ·------------------· | |
+    | ·----------------------· |                | ·----------------------· |
+    ·--------------------------·                ·--------------------------·
+
+The idea is that if one drive fails, the other one will still be able to boot into the outer base residing on the degraded `/dev/mirror/outer`, which can in turn unlock and boot the inner base, residing on a degraded zfs mirror. (This has been tested by yanking one of the driver out from under the system when shut down.)
+
+A bu^H^Hfeature of this setup is that `unlock.sh` will fail to unlock one of the GELI partitions for the inner base unless `set -e` is disabled, alerting the user to the failure.
+
+Otherwise, everything should work the same as in a regular freebsd-outerbase system, especially updating the outer base. The only manual maintenance would be to update both ESPs in case `loader.efi` needs to be replaced.
 
 #### boot partitions: dual ESPs
 
 #### outer base: GEOM mirror
 
+```
+gmirror load
+gmirror label outer /dev/gpt/outer0 /dev/gpt/outer1
+```
+
 #### inner base: GELI-encrypted zpool mirror
 
+```
+geli init -J - /dev/gpt/inner0
+geli init -J - /dev/gpt/inner1
+geli attach -j - /dev/gpt/inner0
+geli attach -j - /dev/gpt/inner1
+```
+
+`zpool create -o ashift=12 -m none -o altroot=/mnt zroot mirror /dev/gpt/inner0.eli /dev/gpt/inner1.eli`
+
+#### fstabs
+
+swap
+
 #### `unlock.sh`: dual unlock
+
+```
+stty -echo
+read -p "GELI password to unlock inner base: " -r gelipw
+echo
+stty echo
+
+echo $gelipw | geli attach -j - gpt/inner0
+echo $gelipw | geli attach -j - gpt/inner1
+```
 
 #### Soundtrack
 
