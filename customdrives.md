@@ -1,6 +1,6 @@
 # freebsd-outerbase: `customdrives`
 
-The [outerbase-install.sh](outerbase-install.sh) script is only made for a very simple, one-drive installation, and it's not realistic for the script to support more advanced drive/encryption configurations. Therefore, `customdrives` provides a _“bring your own zpool”_ solution, where the system is installed onto a prepared outer base block device and zpool, which take any form you can dream of.
+The [outerbase-install.sh](outerbase-install.sh) script is only made for a very simple, one-drive installation, and it's not realistic for the script to support more advanced drive/encryption configurations. Therefore, the `customdrives=` option provides a _“bring your own zpool”_ solution, where the system is installed onto a prepared outer base block device and zpool, which take any form you can dream of.
 
 The main guideline is that after the installation, the system should be able to boot from the outer base block device, and unlock the inner base zpool through `unlock.sh`, which of course needs to be tweaked to fit the drive configuration. As long as that works, many different kinds of setup should be possible.
 
@@ -43,9 +43,9 @@ I doubt that anyone in the world besides myself will ever do this, but if you in
 
 This system uses two mirrored SSDs in order to be able to survive the failure of one SSD, and still continue working.
 
-Obviously, there are several ways to "hardware-RAID" (or rather, "BIOS-raid") such a configuration with minimal hassle. However, in keeping with the spirit of it, this system achieves the mirroring by nailing extra legs onto freebsd-outerbase.
+Obviously, there are several ways to "hardware-RAID" (or maybe "BIOS-raid") such a configuration with minimal hassle. However, in keeping with the spirit of it, this system achieves the same by nailing extra legs onto freebsd-outerbase.
 
-This system has two identically-sized SSDs, where the outer base is mirrored by GEOM and formatted to UFS, while the inner base is a mirror of tow GELI-encrypted partitions.
+This system has two identically-sized SSDs, where the outer base is mirrored by GEOM and formatted to UFS, while the inner base is a mirror of two GELI-encrypted partitions.
 
     .--------- SSD 1 ----------.                .--------- SSD 2 ----------.
     | .----------------------. |                | .----------------------. |
@@ -76,9 +76,9 @@ This system has two identically-sized SSDs, where the outer base is mirrored by 
     | ·----------------------· |                | ·----------------------· |
     ·--------------------------·                ·--------------------------·
 
-The idea is that if one drive fails, the other one will still be able to boot into the outer base residing on the degraded `/dev/mirror/outer`, which can in turn unlock and boot the inner base, residing on a degraded zfs mirror. (This has been tested by yanking one of the driver out from under the system when shut down.)
+The idea is that if one drive fails, the other one will still be able to boot into the outer base residing on the degraded `/dev/mirror/outer`, which can in turn unlock and boot the inner base, residing on a degraded zfs mirror. (This has been tested by yanking one of the drives out from under the system when shut down.)
 
-A bu^H^Hfeature of this setup is that `unlock.sh` will fail to unlock one of the GELI partitions for the inner base unless `set -e` is disabled, alerting the user to the failure.
+A ~bug~ feature of this setup is that `unlock.sh` will fail to unlock the missing GELI partitions and abort rebooting into the inner base unless/until `set -e` is disabled. This alerts the user to the drive failure.
 
 Otherwise, everything should work the same as in a regular freebsd-outerbase system, especially updating the outer base. The only manual maintenance would be to update both ESPs in case `loader.efi` needs to be replaced.
 
