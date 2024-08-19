@@ -49,64 +49,155 @@ This system has two identically-sized SSDs, where the outer base is mirrored by 
 
     .--------- SSD 1 ----------.                .--------- SSD 2 ----------.
     | .----------------------. |                | .----------------------. |
-    | |       gpt/efi0       | |                | |       gpt/efi1       | |
+    | |       gpt/esp0       | |                | |       gpt/esp1       | |
     | |      ESP: FAT32      | |                | |      ESP: FAT32      | |
     | |      loader.efi      | |                | |      loader.efi      | |
     | ·----------------------· |                | ·----------------------· |
-    |                          |                |                          |
     | .----------------------. |                | .----------------------. |
     | |     gpt/swap0.eli    | |                | |     gpt/swap1.eli    | |
     | |         swap         | |                | |         swap         | |
     | ·----------------------· |                | ·----------------------· |
-    |                          |                |                          |
     | .----------------------. |                | .----------------------. |
     | |      gpt/outer0      | |                | |      gpt/outer1      | |
     | |         UFS         <------ gmirror ------->        UFS          | |
     | |      outer base      | |  mirror/outer  | |      outer base      | |
     | ·----------------------· |                | ·----------------------· |
-    |                          |                |                          |
     | .----------------------. |                | .----------------------. |
     | |      gpt/inner0      | |                | |      gpt/inner1      | |
     | |         GELI         | |                | |         GELI         | |
     | | .------------------. | |                | | .------------------. | |
     | | |  gpt/inner0.eli  | | |                | | |  gpt/inner0.eli  | | |
-    | | |       ZFS       <------ zfs mirror -------->      ZFS        | | |
-    | | |    inner base    | |       zroot      | | |    inner base    | | |
+    | | |       ZFS       <------- zfs mirror ------->      ZFS        | | |
+    | | |    inner base    | | |     zroot      | | |    inner base    | | |
     | | ·------------------· | |                | | ·------------------· | |
     | ·----------------------· |                | ·----------------------· |
     ·--------------------------·                ·--------------------------·
 
-The idea is that if one drive fails, the other one will still be able to boot into the outer base residing on the degraded `/dev/mirror/outer`, which can in turn unlock and boot the inner base, residing on a degraded zfs mirror. (This has been tested by yanking one of the drives out from under the system when shut down.)
+The idea is that if one drive fails, the other one will still be able to boot into the outer base residing on the degraded `/dev/mirror/outer`, which can in turn unlock and boot the inner base, residing on a degraded zfs mirror. (This has been tested by yanking one of the drives out when the system was shut down.)
 
 A ~bug~ feature of this setup is that `unlock.sh` will fail to unlock the missing GELI partitions and abort rebooting into the inner base unless/until `set -e` is disabled. This alerts the user to the drive failure.
 
-Otherwise, everything should work the same as in a regular freebsd-outerbase system, especially updating the outer base. The only manual maintenance would be to update both ESPs in case `loader.efi` needs to be replaced.
+Otherwise, everything should work the same as in a regular freebsd-outerbase system, especially updating the outer base. The only additional maintenance task should be to update both ESPs individually in case `loader.efi` needs to be replaced.
+
+#### installing
+
+The following descriptions are kept brief, highlighting the differences to the simple, one-drive installation, aimed at people familiar with the freebsd-outerbase installation process (most likely, just myself).
+
+The first step is partitioning both drives as laid out in the work of ASCII art above.
 
 #### boot partitions: dual ESPs
 
+The same procedure as the regular freebsd-outerbase install with UEFI boot (installing `/boot/loader.efi` as `\EFI\BOOT\BOOTX64.EFI`), but once on each drive.
+
+It might be advisable to register both ESPs through `efibootmgr`, but in testing on VirtualBox and a physical HP Prodesk computer, it proved to be unnecessary, even for the automatic failover when one drive is removed.
+
+#### inner base: GELI-encrypted zpool mirror
+
+The set up both encrypted partitions for the zfs mirror, you can either be prepared to type your passphrase four times by using:
+
+```
+geli load
+geli init /dev/gpt/inner0
+geli init /dev/gpt/inner1
+geli attach /dev/gpt/inner0
+geli attach /dev/gpt/inner1
+```
+
+… or you can export your passphrase to a variable and pipe it into geli:
+
+```
+export $passphrase="this is my s3cr3t"
+geli load
+echo $passphrase | geli init -J - /dev/gpt/inner0
+echo $passphrase | geli init -J - /dev/gpt/inner1
+echo $passphrase | geli attach -j - /dev/gpt/inner0
+echo $passphrase | geli attach -j - /dev/gpt/inner1
+```
+
+After verifying with `geli status` that both encrypted partition are attached, you may create the zpool, which is the most fun part for me:
+
+`zpool create -o ashift=12 -m none -o altroot=/mnt zroot mirror /dev/gpt/inner0.eli /dev/gpt/inner1.eli`
+
+After that, you can marvel at what you created, so go ahead and `zpool status` and `zpool list -v`, lean back and smile.
+
 #### outer base: GEOM mirror
+
+With the zpool created, set up the outer base mirror:
 
 ```
 gmirror load
 gmirror label outer /dev/gpt/outer0 /dev/gpt/outer1
 ```
 
-#### inner base: GELI-encrypted zpool mirror
+Successful operation can be verified by `gmirror status`.
+
+**Note:** When trying this process the other way around – first creating `mirror/outer`, then `gpt/inner{0,1}.eli`, I found that gmirror doesn't seem to like `/dev/gpt/`. It creates the mirror using `/dev/diskid/` entries, which whithers (i.e. disappears) all `/dev/gpt/` entries. In order to avoid that, I created `gpt/inner{0,1}.eli` first, and only afterwards used gmirror (which causes it to use old-school device names like `nda0p2`).
+
+#### custom files: outer base /etc/fstab
 
 ```
-geli init -J - /dev/gpt/inner0
-geli init -J - /dev/gpt/inner1
-geli attach -j - /dev/gpt/inner0
-geli attach -j - /dev/gpt/inner1
+/dev/mirror/outer /         ufs     rw,noatime 1 1
+tmpfs             /var/log  tmpfs   rw,size=100m,noexec          0 0
+tmpfs             /tmp      tmpfs   rw,size=500m,mode=777,nosuid 0 0
 ```
 
-`zpool create -o ashift=12 -m none -o altroot=/mnt zroot mirror /dev/gpt/inner0.eli /dev/gpt/inner1.eli`
+#### custom files: inner base /etc/fstab
 
-#### fstabs
+```
+/dev/mirror/outer  /outer    ufs     rw,noatime 1 1
+/dev/gpt/swap0.eli none      swap    sw 0 0
+/dev/gpt/swap1.eli none      swap    sw 0 0
+tmpfs              /tmp      tmpfs   rw,mode=777,nosuid 0 0
+```
 
-swap
+#### custom files: /boot/loader.conf
 
-#### `unlock.sh`: dual unlock
+```
+autoboot_delay="4"
+geom_mirror_load="YES"
+vfs.root.mountfrom="ufs:/dev/mirror/outer"
+geom_eli_load="YES"
+zfs_load="YES"
+```
+
+#### setting up `outerbase-install.sh`
+
+Prepare `outerbase-install.sh` with the following settings:
+
+```
+customdrives=set
+outerbasedevice=/dev/mirror/outer
+customfstabouter=/tmp/tmp/fstab.outer
+customfstabinner=/tmp/tmp/fstab.inner
+bootloaderconf=/tmp/tmp/boot.loader
+outerbasetxz=/tmp/tmp/outerbase.txz
+```
+
+Furthermore, set `hostname=`, `poolname=` and `rootpw=` and other settings according to your needs. Most install-related settings like `gelipassphrase=` and `swapsize=` will be ignored.
+
+Then you'll need to transfer the relevant files to the installer image, which I tend to do like so:
+
+```
+dhclient em0
+mkdir /tmp/tmp
+mount -t tmpfs tmpfs /tmp/tmp
+cd /tmp/tmp
+nc -l 8000 | tar xf -
+```
+
+from another machine containing the requisite files, transfer them over:
+
+```
+tar cf - outerbase-install.sh outerbase.txz fstab.outer fstab.inner loader.conf | nc -N target 8000
+```
+
+Then, cross your fingers and run `sh outerbase-install.sh`.
+
+#### tweaking `unlock.sh`
+
+Before (or after, if you like) rebooting into the outer base for the first time, you need to adapt `unlock.sh` in order for it to unlock the inner base correctly.
+
+The minimal modification to `unlock.sh` would require you to enter the passphrase twice. In order to avoid this, you can type it into a shell variable, which then pipes it into `geli attach`. Edit the relevant portion of `unlock.sh` like so:
 
 ```
 stty -echo
@@ -118,6 +209,8 @@ echo $gelipw | geli attach -j - gpt/inner0
 echo $gelipw | geli attach -j - gpt/inner1
 ```
 
-#### Soundtrack
+#### Ohrwurm
 
-[Blind Guardian - Mirror Mirror](https://www.youtube.com/watch?v=Z_p-FfinVTA)
+The official soundtrack for the Fully Mirrored Two-Drive System implementation of freebsd-outerbase is:
+
+[**Blind Guardian - Mirror Mirror**](https://www.youtube.com/watch?v=Z_p-FfinVTA)
