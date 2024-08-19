@@ -22,11 +22,6 @@ This solution builds upon two [previous](https://github.com/Sec42/freebsd-remote
                                          |
                                   2) ssh ┘
 
-## update history
-* **2024-08**: version 0.2, now supports BIOS boot, thanks @foudfou
-* **2023-11**: first documented update procedure for self-compiled custom outer base
-* **2021-04**: version 0.1, initial release
-
 ## highlights
 * comfortable unlock/reboot script with basic Boot Environments support
 * optional encrypted swap
@@ -48,6 +43,12 @@ It *does* provide encryption at rest, so all user data and the inner base system
 * on the physical drives when removed.
 
 For the question of SSH host keys, see **variables in the install script** below.
+
+## update history
+* **2024-08**: version 0.3, now support arbitrary zpools and outerbase block devices (through `customdrives=`)
+* **2024-08**: version 0.2, now supports BIOS boot, thanks @foudfou
+* **2023-11**: first documented update procedure for self-compiled custom outer base
+* **2021-04**: version 0.1, initial release
 
 ## quick start
 1. Boot a stock FreeBSD installer image on the target machine and enter the shell.
