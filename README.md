@@ -22,11 +22,6 @@ This solution builds upon two [previous](https://github.com/Sec42/freebsd-remote
                                          |
                                   2) ssh ┘
 
-## update history
-* **2024-08**: version 0.2, now supports BIOS boot, thanks @foudfou
-* **2023-11**: first documented update procedure for self-compiled custom outer base
-* **2021-04**: version 0.1, initial release
-
 ## highlights
 * comfortable unlock/reboot script with basic Boot Environments support
 * optional encrypted swap
@@ -49,6 +44,12 @@ It *does* provide encryption at rest, so all user data and the inner base system
 
 For the question of SSH host keys, see **variables in the install script** below.
 
+## update history
+* **2024-08**: version 0.3, now support arbitrary zpools and outerbase block devices (through `customdrives=`)
+* **2024-08**: version 0.2, now supports BIOS boot, thanks @foudfou
+* **2023-11**: first documented update procedure for self-compiled custom outer base
+* **2021-04**: version 0.1, initial release
+
 ## quick start
 1. Boot a stock FreeBSD installer image on the target machine and enter the shell.
 2. Transfer `outerbase-installer.sh` from this repo to `/tmp/` (by removable media, http, `nc`, …).
@@ -56,7 +57,17 @@ For the question of SSH host keys, see **variables in the install script** below
 
        sh /tmp/outerbase-installer.sh ada0
 
-**That drive will be paved by `gpart destroy -F` in the process.**
+**That drive will have its partition table erased by `gpart destroy -F` in the process.**
+
+## a warning on deleting used drives
+
+The metadata of old zpools, GEOM mirrors, geli-encrypted partitions etc. can remain on a drive and cause confusion even after the partition table was destroyed by `gpart destroy -F`.
+
+In one observed case, metadata from a former zpool remained on a drive after it had received a new freebsd-outerbase installation. Both the old zombie zpool and the newly installed one had the name `zroot`, causing the automatic import to fail after unlocking the geli partition containing the new zpool. Using [`zpool-labelclear(8)`](https://man.freebsd.org/cgi/man.cgi?query=zpool-labelclear&sourceid=opensearch) to fry the _old_ zpool also destroyed the geli metadata for the container of the _current_ zpool, necessitating a reinstall. _sad_trombone.wav_
+
+In another case, a zombie Windows Recovery EFI program booted from a drive that had just received a new freebsd-outerbase installation.
+
+To avoid any such mishaps, it's best to zero out the drive with `dd if=/dev/zero` before installing, which you can expect to take between 5 and 15 minutes for a 256GB SSD.
 
 ## detailed description
 ### installing
@@ -69,24 +80,32 @@ To run the installation, execute `outerbase-installer.sh` with the name of the t
 **In setting up the system for booting, the script expects:**
 * an amd64 machine with UEFI or BIOS boot
 * no other operating systems
-* to create the machine's only EFI System Partition (ESP) on the target drive
+* to create the machine's only bootable partition on the target drive
 
 The script then proceeds to:
 1. create partitions, set up encryption, create the zpool,
 2. create file systems and zfs datsets,
-2. install the outer base, inner base and ESP,
+2. install the outer base, inner base and boot partition,
 3. configure the outer and inner base (see below),
 4. open a `chroot`'ed `bsdconfig` for both outer and inner base.
 
 When all is done without errors, the system can be rebooted (with the installer medium removed) and should boot into the outer base.
 
-#### variables in the install script
-All tunables are set in the first few lines of the install script.
+#### install script variables: install options
+At the top of the install script, you'll find options for different ways of installation:
 
 **`gptboot`** can be empty or contain a string:
 
 * If empty, the system will be set up for UEFI boot, with FreeBSD's default `loader.efi` installed as `BOOTX64.EFI`.
 * If set to a string, the system will be set up for BIOS/MBR boot, with a Master Boot Record and a `freebsd-boot` partition written to the target drive.
+
+**`customdrives`** and its associated options are an advanced option to support more customized installations. The idea is to install an outer and inner base, but in a **_“bring your own zpool”_** kind of way: The install script skips all partitioning and encryption setup, and just installs into an existing outer base device and zpool.
+
+* [This feature is documented in detail in customdrives.md.](customdrives.md)
+
+#### install script variables: system properties
+
+Below the install options, you can customize the system to be installed.
 
 **`hostname`** and **`poolname`** are self-explanatory.
 
@@ -181,7 +200,7 @@ The **outer base** is a stock FreeBSD base system (except when using a **custom 
 
 The script to unlock the inner base and reboot into it is placed at `/root/unlock.sh` (see **booting and unlocking** above).
 
-This is `/etc/fstab` for the outer base. Note the `noauto` entry for the ESP and the size-limited `tmpfs` entries:
+This is `/etc/fstab` for the outer base in a UEFI install. Note the `noauto` entry for the ESP and the size-limited `tmpfs` entries:
 
     /dev/gpt/outer /         ufs     rw,noatime 1 1
     /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
@@ -194,7 +213,7 @@ Both **outer base and inner base** share the same host id. This avoids complaint
 
 The install script also creates SSH host keys (either identical or separate for inner and outer base, see **variables in the install script** above) and sets `sshd_enable=YES` for both outer and inner base. Optionally, `PermitRootLogin` is set to `yes` in `/etc/ssh/sshd_config`.
 
-The **inner base** has `zfs_enable=YES` set to ensure `zfs mount -a` is run on boot. This is `/etc/fstab` for the inner base:
+The **inner base** has `zfs_enable=YES` set to ensure `zfs mount -a` is run on boot. This is `/etc/fstab` for the inner base in a UEFI install:
 
     /dev/gpt/outer    /outer    ufs     rw,noatime 1 1
     /dev/gpt/efi      /boot/efi msdosfs rw,noauto  1 1
@@ -206,12 +225,12 @@ Crucially, the outer base UFS partition is mounted at `/outer`. In the inner bas
 Note that the mountpoint for the ESP is `/boot/efi`, even though `/boot` itself is a symlink. This is preferred over `/outer/boot/efi`, because `/boot/efi` is the more canonical mountpoint, and it is the same for both the outer and inner base, hopefully avoiding confusion and mistakes.
 
 ### custom minimal outer base
-Compiling your own FreeBSD base system for the outer base allows you to make it smaller and simpler, in accordance with its role as a 'login-and-unlock-only system'. A `src.conf` for such a minimal outer system is part of this repository. The resulting sizes, as last tested for 13.0-RELEASE, are as follows:
+Compiling your own FreeBSD base system for the outer base allows you to make it smaller and simpler, in accordance with its role as a 'login-and-unlock-only system'. A `src.conf` for such a minimal outer system is part of this repository. The resulting sizes are as follows:
 
 &nbsp;| base.txz | installed | with kernel | partition
 :---:|---:|---:|---:|---:
-13.0-RELEASE|181M|972M|1109M|1600M
-this `src.conf`|50M|244M|381M|800M
+`src.conf` 14.1|63M|322M|516M|1000M
+stock 14.1|199M|973M|1166M|1600M
 
 The recommended partition size takes into account that upgrades require some free space, including for two kernels to coexist.
 
