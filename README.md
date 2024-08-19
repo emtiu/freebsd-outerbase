@@ -56,7 +56,17 @@ For the question of SSH host keys, see **variables in the install script** below
 
        sh /tmp/outerbase-installer.sh ada0
 
-**That drive will be paved by `gpart destroy -F` in the process.**
+**That drive will have its partition table erased by `gpart destroy -F` in the process.**
+
+## a warning on deleting used drives
+
+The metadata of old zpools, GEOM mirrors, geli-encrypted partitions etc. can remain on a drive and cause confusion even after the partition table was destroyed by `gpart destroy -F`.
+
+In one observed case, metadata from a former zpool remained on a drive after it had received a new freebsd-outerbase installation. Both the old zombie zpool and the newly installed one had the name `zroot`, causing the automatic import to fail after unlocking the geli partition containing the new zpool. Using [`zpool-labelclear(8)`](https://man.freebsd.org/cgi/man.cgi?query=zpool-labelclear&sourceid=opensearch) to fry the _old_ zpool also destroyed the geli metadata for the container of the _current_ zpool, necessitating a reinstall. _sad_trombone.wav_
+
+In another case, a zombie Windows Recovery EFI program booted from a drive that had just received a new freebsd-outerbase installation.
+
+To avoid any such mishaps, it's best to zero out the drive with `dd if=/dev/zero` before installing, which you can expect to take between 5 and 15 minutes for a 256GB SSD.
 
 ## detailed description
 ### installing
