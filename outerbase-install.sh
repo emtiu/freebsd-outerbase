@@ -111,6 +111,7 @@ if [ -z "$customdrives" ]; then
 else
 
   # customdrives: verify conditions as explained above
+  echo "Verifying devices and paths. If the script fails here, check them."
   zpool list -H $poolname        # fails if pool is not imported
   [ -e "$outerbasedevice" ]      # fails if outer base device does not exist
   [ -f "$customfstabouter" ]     # fails if no prepared fstab found
