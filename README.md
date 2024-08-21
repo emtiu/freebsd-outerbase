@@ -15,7 +15,7 @@ This solution builds upon two [previous](https://github.com/Sec42/freebsd-remote
                                                                  |  .----------------------. |
                                .----------------.  3) unlock     |  | gpt/inner.eli: zroot | |
                                | gpt/outer: ufs |--------------> |  |                      | |
-    .--------------.  1) boot  |                |------------------>|     "inner base"     | |
+    .--------------.  1) boot  |                |-------------------->    "inner base"     | |
     | gpt/efi: ESP |---------->|  "outer base"  |  4) reboot -r  |  ·----------------------· |
     ·--------------·           ·----------------·                ·---------------------------·
                                          Λ

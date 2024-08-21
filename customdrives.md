@@ -66,7 +66,7 @@ This system has two identically-sized SSDs, where the outer base is mirrored by 
     | |      gpt/inner0      | |                | |      gpt/inner1      | |
     | |         GELI         | |                | |         GELI         | |
     | | .------------------. | |                | | .------------------. | |
-    | | |  gpt/inner0.eli  | | |                | | |  gpt/inner0.eli  | | |
+    | | |  gpt/inner0.eli  | | |                | | |  gpt/inner1.eli  | | |
     | | |       ZFS       <------- zfs mirror ------->      ZFS        | | |
     | | |    inner base    | | |     zroot      | | |    inner base    | | |
     | | ·------------------· | |                | | ·------------------· | |
