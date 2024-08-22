@@ -342,6 +342,11 @@ fi
 # locked by geli anyway. It's no problem to later import the pool by unlock.sh
 chroot /mnt/outer sysrc zfs_enable=NO
 
+chroot /mnt/outer sysrc tmpmfs=YES
+chroot /mnt/outer sysrc tmpsize=500m
+chroot /mnt/outer sysrc varmfs=YES
+chroot /mnt/outer sysrc varsize=500m
+
 if [ -z "$customdrives" ]; then
 
   if [ -z "$gptboot" ]; then
@@ -351,8 +356,6 @@ EOD
   fi
   cat <<EOD >> /mnt/outer/etc/fstab
 /dev/gpt/outer /         ufs     rw,noatime 1 1
-tmpfs          /var/log  tmpfs   rw,size=100m,noexec          0 0
-tmpfs          /tmp      tmpfs   rw,size=500m,mode=777,nosuid 0 0
 EOD
 # the outer base doesn't get swap, as there should be no need for it
 
