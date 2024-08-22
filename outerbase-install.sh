@@ -312,10 +312,6 @@ else
   chroot /mnt passwd
 fi
 
-[ -f /mnt/outer/usr/sbin/sendmail ] && \
-  chroot /mnt/outer sysrc sendmail_enable=NONE
-chroot /mnt sysrc sendmail_enable=NONE
-
 
 ###
 ### common config: ssh
