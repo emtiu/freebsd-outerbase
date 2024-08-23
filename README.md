@@ -200,12 +200,12 @@ The **outer base** is a stock FreeBSD base system (except when using a **custom 
 
 The script to unlock the inner base and reboot into it is placed at `/root/unlock.sh` (see **booting and unlocking** above).
 
-This is `/etc/fstab` for the outer base in a UEFI install. Note the `noauto` entry for the ESP and the size-limited `tmpfs` entries:
+This is `/etc/fstab` for the outer base in a UEFI install:
 
     /dev/gpt/outer /         ufs     rw,noatime 1 1
     /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
-    tmpfs          /var/log  tmpfs   rw,size=100m,noexec          0 0
-    tmpfs          /tmp      tmpfs   rw,size=500m,mode=777,nosuid 0 0
+
+In addition to these fstab entries, the system uses the `tmpmfs` and `varmfs` options in `/etc/rc.conf` to set up non-persistent memory-filesystems (of 500m each) for `/tmp` and `/var` for the outer base, with the rationale that the outer base won't really ever need any files placed there.
 
 The install script sets `zfs_enable=NO` for the outer base. This way, no auto-import of the zpool is attempted at boot, which would fail anyway because `gpt/inner.eli` is locked.
 
@@ -317,12 +317,12 @@ Then, build the system. You need to provide `make` with the `src.conf` that corr
 
 ##### step 3: updating `/etc`
 
-Normally, `etcupdate` is meant to have a persistent database in `/var/db/etcupdate`. Here, a temporary storage location in `/tmp` used, which will be erased on reboot. This way, the operation takes longer, but leaves no clutter behind on the `/outer` partition.
+Normally, `etcupdate` maintains a persistent database in `/var/db/etcupdate` to save execution time on subsequent runs. Since the outer base uses a memory non-persistent memory filesystem for `/var/`, this database will be lost on reboot. This way, running `etcudpdate` takes considerably longer, but leaves no clutter behind on the small outer base's root partition.
 
 From `/usr/src`, run:
 
-    # etcupdate extract -D /outer/ -d /tmp/etcupdate
-    # etcupdate -p -D /outer -d /tmp/etcupdate
+    # etcupdate extract -D /outer/
+    # etcupdate -p -D /outer
 
 ##### step 4: installing
 
@@ -332,7 +332,7 @@ From `/usr/src`, run:
 
 Then complete the `etcupdate` operation:
 
-`# etcupdate -D /outer -d /tmp/etcupdate`
+`# etcupdate -D /outer`
 
 You may now want to clean the installation of unneeded files and directories. Specifically, installing an update for the custom minimal outer base may leave behind a number of empty directories associated with unused system components. To find out which those are, run from `/usr/src`:
 

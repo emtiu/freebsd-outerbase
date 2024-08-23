@@ -251,11 +251,12 @@ mount $outerbasedevice /mnt/outer
 ###
 
 # use custom outerbase.txz if set
-if [ -n "$outerbasetxz" ]; then
-  tar -xvpPf $outerbasetxz -C /mnt/outer
-else
-  tar -xvpPf /usr/freebsd-dist/base.txz -C /mnt/outer
+if [ -z "$outerbasetxz" ]; then
+  outerbasetxz=/usr/freebsd-dist/base.txz
 fi
+
+# extract /var but leave it empty for varmfs
+tar -xvpPf $outerbasetxz --exclude ./var/?* -C /mnt/outer
 
 
 ###
@@ -312,10 +313,6 @@ else
   chroot /mnt passwd
 fi
 
-[ -f /mnt/outer/usr/sbin/sendmail ] && \
-  chroot /mnt/outer sysrc sendmail_enable=NONE
-chroot /mnt sysrc sendmail_enable=NONE
-
 
 ###
 ### common config: ssh
@@ -346,6 +343,11 @@ fi
 # locked by geli anyway. It's no problem to later import the pool by unlock.sh
 chroot /mnt/outer sysrc zfs_enable=NO
 
+chroot /mnt/outer sysrc tmpmfs=YES
+chroot /mnt/outer sysrc tmpsize=500m
+chroot /mnt/outer sysrc varmfs=YES
+chroot /mnt/outer sysrc varsize=500m
+
 if [ -z "$customdrives" ]; then
 
   if [ -z "$gptboot" ]; then
@@ -355,8 +357,6 @@ EOD
   fi
   cat <<EOD >> /mnt/outer/etc/fstab
 /dev/gpt/outer /         ufs     rw,noatime 1 1
-tmpfs          /var/log  tmpfs   rw,size=100m,noexec          0 0
-tmpfs          /tmp      tmpfs   rw,size=500m,mode=777,nosuid 0 0
 EOD
 # the outer base doesn't get swap, as there should be no need for it
 
