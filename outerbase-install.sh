@@ -162,7 +162,8 @@ if [ -z "$customdrives" ]; then
     mount -t msdos /dev/gpt/efi /mnt/
     mkdir -p /mnt/EFI/BOOT
     cp /boot/loader.efi /mnt/EFI/BOOT/BOOTX64.EFI
-    efibootmgr -a -c -l /mnt/EFI/BOOT/BOOTX64.EFI -L FreeBSD
+    # skip efibootmgr on fail (for VirtualBox), probably still works
+    efibootmgr -a -c -l /mnt/EFI/BOOT/BOOTX64.EFI -L FreeBSD || true
     umount /mnt/
   fi
 
