@@ -317,12 +317,12 @@ Then, build the system. You need to provide `make` with the `src.conf` that corr
 
 ##### step 3: updating `/etc`
 
-Normally, `etcupdate` is meant to have a persistent database in `/var/db/etcupdate`. Here, a temporary storage location in `/tmp` used, which will be erased on reboot. This way, the operation takes longer, but leaves no clutter behind on the `/outer` partition.
+Normally, `etcupdate` maintains a persistent database in `/var/db/etcupdate` to save execution time on subsequent runs. Since the outer base uses a memory non-persistent memory filesystem for `/var/`, this database will be lost on reboot. This way, running `etcudpdate` takes considerably longer, but leaves no clutter behind on the small outer base's root partition.
 
 From `/usr/src`, run:
 
-    # etcupdate extract -D /outer/ -d /tmp/etcupdate
-    # etcupdate -p -D /outer -d /tmp/etcupdate
+    # etcupdate extract -D /outer/
+    # etcupdate -p -D /outer
 
 ##### step 4: installing
 
@@ -332,7 +332,7 @@ From `/usr/src`, run:
 
 Then complete the `etcupdate` operation:
 
-`# etcupdate -D /outer -d /tmp/etcupdate`
+`# etcupdate -D /outer`
 
 You may now want to clean the installation of unneeded files and directories. Specifically, installing an update for the custom minimal outer base may leave behind a number of empty directories associated with unused system components. To find out which those are, run from `/usr/src`:
 
