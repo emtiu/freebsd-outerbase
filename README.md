@@ -200,12 +200,12 @@ The **outer base** is a stock FreeBSD base system (except when using a **custom 
 
 The script to unlock the inner base and reboot into it is placed at `/root/unlock.sh` (see **booting and unlocking** above).
 
-This is `/etc/fstab` for the outer base in a UEFI install. Note the `noauto` entry for the ESP and the size-limited `tmpfs` entries:
+This is `/etc/fstab` for the outer base in a UEFI install:
 
     /dev/gpt/outer /         ufs     rw,noatime 1 1
     /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
-    tmpfs          /var/log  tmpfs   rw,size=100m,noexec          0 0
-    tmpfs          /tmp      tmpfs   rw,size=500m,mode=777,nosuid 0 0
+
+In addition to these fstab entries, the system uses the `tmpmfs` and `varmfs` options in `/etc/rc.conf` to set up non-persistent memory-filesystems (of 500m each) for `/tmp` and `/var` for the outer base, with the rationale that the outer base won't really ever need any files placed there.
 
 The install script sets `zfs_enable=NO` for the outer base. This way, no auto-import of the zpool is attempted at boot, which would fail anyway because `gpt/inner.eli` is locked.
 
