@@ -251,11 +251,12 @@ mount $outerbasedevice /mnt/outer
 ###
 
 # use custom outerbase.txz if set
-if [ -n "$outerbasetxz" ]; then
-  tar -xvpPf $outerbasetxz -C /mnt/outer
-else
-  tar -xvpPf /usr/freebsd-dist/base.txz -C /mnt/outer
+if [ -z "$outerbasetxz" ]; then
+  outerbasetxz=/usr/freebsd-dist/base.txz
 fi
+
+# extract /var but leave it empty for varmfs
+tar -xvpPf $outerbasetxz --exclude ./var/?* -C /mnt/outer
 
 
 ###
