@@ -1,13 +1,13 @@
 # freebsd-outerbase: `customdrives`
 
-The [outerbase-install.sh](outerbase-install.sh) script is only made for a very simple, one-drive installation, and it's not realistic for the script to support more advanced drive/encryption configurations. Therefore, the `customdrives=` option provides a _“bring your own zpool”_ solution, where the system is installed onto a prepared outer base block device and zpool, which take any form you can dream of.
+The [outerbase-install.sh](outerbase-install.sh) script is only made for a very simple, one-drive installation, and it's not realistic for the script to support more advanced drive/encryption configurations. Therefore, the `customdrives=` option provides a _“bring your own zpool”_ solution, where the system is installed onto a prepared outer base block device and zpool, which can be anything you can dream up.
 
 The main guideline is that after the installation, the system should be able to boot from the outer base block device, and unlock the inner base zpool through `unlock.sh`, which of course needs to be tweaked to fit the drive configuration. As long as that works, many different kinds of setup should be possible.
 
 ## how it works
-For a `customdrives` install, you need to do several things that [outerbase-install.sh](outerbase-install.sh) would take care of in the case of a simple, one-drive install:
+For a `customdrives` install, you need to do several things manually that [outerbase-install.sh](outerbase-install.sh) would take care of in the case of a simple, one-drive install:
 
-* **boot partitions:** set up boot partitions such that the system will be able to boot the outer base, corresponding to whichever device you are planning to use for the outer base UFS filesystem.
+* **boot partitions:** set up boot drives and partitions (EFI or MBR).
 
 * **outer base block device:** set up a device to hold the outer base UFS filesystem (but do not format it yet).
 
@@ -15,7 +15,7 @@ For a `customdrives` install, you need to do several things that [outerbase-inst
 
 * **swap space,** if you want any.
 
-Then you should prepare a number of files with appropriate settings for the system to be installed:
+Then you should prepare a number of files for the system to be installed:
 
 * an `fstab` for the outer base
 * an `fstab` for the inner base
@@ -41,7 +41,7 @@ I doubt that anyone in the world besides myself will ever do this, but if you in
 
 ### Fully Mirrored Two-Drive System
 
-This system uses two mirrored SSDs in order to be able to survive the failure of one SSD, and still continue working.
+This system uses two mirrored SSDs in order to be able to survive the failure of one drive.
 
 Obviously, there are several ways to "hardware-RAID" (or maybe "BIOS-raid") such a configuration with minimal hassle. However, in keeping with the spirit of it, this system achieves the same by nailing extra legs onto freebsd-outerbase.
 
@@ -81,7 +81,7 @@ Otherwise, everything should work the same as in a regular freebsd-outerbase sys
 
 #### installing
 
-The following descriptions are kept brief, highlighting the differences to the simple, one-drive installation, aimed at people familiar with the freebsd-outerbase installation process (most likely, just myself).
+The following descriptions are kept brief, highlighting the differences to the simple, one-drive installation, aimed at people familiar with the freebsd-outerbase installation process (just myself, honestly).
 
 The first step is partitioning both drives as laid out in the work of ASCII art above.
 
@@ -89,11 +89,11 @@ The first step is partitioning both drives as laid out in the work of ASCII art 
 
 The same procedure as the regular freebsd-outerbase install with UEFI boot (installing `/boot/loader.efi` as `\EFI\BOOT\BOOTX64.EFI`), but once on each drive.
 
-It might be advisable to register both ESPs through `efibootmgr`, but in testing on VirtualBox and a physical HP Prodesk computer, it proved to be unnecessary, even for the automatic failover when one drive is removed.
+It might be advisable to register both ESPs through `efibootmgr`, but in testing on VirtualBox and a physical HP Prodesk computer, it proved to be unnecessary for the automatic failover after removing one drive.
 
 #### inner base: GELI-encrypted zpool mirror
 
-The set up both encrypted partitions for the zfs mirror, you can either be prepared to type your passphrase four times by using:
+To set up both encrypted partitions for the zfs mirror, you can either type your passphrase four times by using:
 
 ```
 geli load
@@ -114,11 +114,11 @@ echo $passphrase | geli attach -j - /dev/gpt/inner0
 echo $passphrase | geli attach -j - /dev/gpt/inner1
 ```
 
-After verifying with `geli status` that both encrypted partition are attached, you may create the zpool, which is the most fun part for me:
+After verifying with `geli status` that both encrypted partitions are attached, you may create the zpool, which I found the most fun:
 
 `zpool create -o ashift=12 -m none -o altroot=/mnt zroot mirror /dev/gpt/inner0.eli /dev/gpt/inner1.eli`
 
-After that, you can marvel at what you created, so go ahead and `zpool status` and `zpool list -v`, lean back and smile.
+With the zpool set up, feel free to `zpool status` and `zpool list -v` and smile.
 
 #### outer base: GEOM mirror
 
