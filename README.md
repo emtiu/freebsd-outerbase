@@ -51,7 +51,7 @@ For the question of SSH host keys, see **variables in the install script** below
 * **2021-04**: version 0.1, initial release
 
 ## quick start
-1. Boot a stock FreeBSD installer image on the target machine and enter the shell.
+1. Boot a stock FreeBSD installer image on the target machine (i.e. option `1. Boot Installer [Enter]`) and enter the shell.
 2. Transfer `outerbase-installer.sh` from this repo to `/tmp/` (by removable media, http, `nc`, …).
 3. Run `outerbase-installer.sh` with the target drive name (without `/dev/`) as the only argument.
 
