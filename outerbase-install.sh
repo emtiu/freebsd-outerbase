@@ -79,6 +79,10 @@ rootSSH=set
 # this is more secure, but creates somewhat of a hassle on the client side
 separateSSHhostkeys=
 
+# use a tmpfs for /var in outer base (destroyed at reboot) to save space and
+# minimize user data. NOTE: if set, pkg cannot be used in the outer base.
+# leave empty for default (permanent /var file system)
+varmfs=
 
 ###
 ### device selection
@@ -256,7 +260,10 @@ if [ -z "$outerbasetxz" ]; then
 fi
 
 # extract /var but leave it empty for varmfs
-tar -xvpPf $outerbasetxz --exclude ./var/?* -C /mnt/outer
+if [ -n "$varmfs" ]; then
+  tarexcl="--exclude './var/?*'"
+fi
+tar -xvpPf $outerbasetxz $tarexcl -C /mnt/outer
 
 
 ###
@@ -345,8 +352,10 @@ chroot /mnt/outer sysrc zfs_enable=NO
 
 chroot /mnt/outer sysrc tmpmfs=YES
 chroot /mnt/outer sysrc tmpsize=500m
-chroot /mnt/outer sysrc varmfs=YES
-chroot /mnt/outer sysrc varsize=500m
+if [ -n "$varmfs" ]; then
+  chroot /mnt/outer sysrc varmfs=YES
+  chroot /mnt/outer sysrc varsize=500m
+fi
 
 if [ -z "$customdrives" ]; then
 
