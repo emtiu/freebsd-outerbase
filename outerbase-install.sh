@@ -84,6 +84,9 @@ separateSSHhostkeys=
 # leave empty for default (permanent /var file system)
 varmfs=
 
+# type of /boot (symlink, nullfs)
+boottype="symlink"
+
 ###
 ### device selection
 ###
@@ -271,8 +274,15 @@ tar -xvpPf $outerbasetxz $tarexcl -C /mnt/outer
 ###
 
 tar -xvpPf /usr/freebsd-dist/base.txz --exclude='boot/' -C /mnt
-ln -s /outer/boot /mnt/boot
-chflags -h sunlink /mnt/boot
+
+# /boot type
+if [ "$boottype" = "symlink" ]; then
+  ln -s /outer/boot /mnt/boot
+  chflags -h sunlink /mnt/boot
+elif [ "$boottype" = "nullfs" ]; then
+  mkdir /mnt/boot
+  mount -t nullfs /mnt/outer/boot /mnt/boot
+fi
 
 
 ###
@@ -289,6 +299,12 @@ vfs.root.mountfrom="ufs:/dev/gpt/outer"
 geom_eli_load="YES"
 zfs_load="YES"
 EOD
+
+  if [ "$boottype" = "nullfs" ]; then
+    cat <<EOD >> /mnt/outer/boot/loader.conf
+nullfs_load="YES"
+EOD
+  fi
 
 else
 
@@ -424,6 +440,15 @@ EOD
   fi
   cat <<EOD >> /mnt/etc/fstab
 /dev/gpt/outer    /outer    ufs     rw,noatime 1 1
+EOD
+
+  if [ "$boottype" = "nullfs" ]; then
+    cat <<EOD >> /mnt/etc/fstab
+/outer/boot       /boot		  nullfs	rw 0 0
+EOD
+  fi
+
+  cat <<EOD >> /mnt/etc/fstab
 tmpfs             /tmp      tmpfs   rw,mode=777,nosuid 0 0
 EOD
 
@@ -451,6 +476,9 @@ if dialog --yes-label "Yes, export" --no-label "No, inspect" \
    --yesno "All done. Unmount all filesystems and export $poolname?" 0 0; then
   umount -f /mnt/outer/dev
   umount -f /mnt/dev
+  if [ "$boottype" = "nullfs" ]; then
+    umount /mnt/outer/boot
+  fi
   umount /mnt/outer
   zpool export $poolname
   if [ -z "$customdrives" ]; then
@@ -466,6 +494,9 @@ echo "--- Before rebooting, do the following: ---"
 echo
 echo "# umount -f /mnt/outer/dev"
 echo "# umount -f /mnt/dev"
+if [ "$boottype" = "nullfs" ]; then
+  echo "# umount /mnt/outer/boot"
+fi
 echo "# umount /mnt/outer"
 echo "# zpool export $poolname"
 echo
