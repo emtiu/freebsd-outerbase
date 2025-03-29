@@ -44,9 +44,10 @@ bootloaderconf=
 hostname=vulcan
 poolname=zroot
 
-# if set, the same root password will be set for the outer and inner base
-# if empty, you will be prompted separately for outer and inner base
-rootpw=
+# root password for the outer base. If empty, you will be prompted for the password
+outerrootpw=
+# root password for the inner base. If empty, you will be prompted for the password
+innerrootpw=
 
 # a geli passphrase containing spaces can be entered in quotes: "test 123"
 # if empty, you will be prompted for geli the passphrase (a total of 3 times)
@@ -310,13 +311,19 @@ chroot /mnt/outer service hostid onestart
 chroot /mnt/outer service hostid_save onestart
 cp /mnt/outer/etc/hostid /mnt/etc/
 
-if [ -n "$rootpw" ]; then
-  echo $rootpw | chroot /mnt/outer pw mod user root -h 0
-  echo $rootpw | chroot /mnt pw mod user root -h 0
+if [ -n "$outerrootpw" ]; then
+  echo "$outerrootpw" | chroot /mnt/outer pw mod user root -h 0
 else
-  echo; echo "Setting root password for outer base:"
+  echo
+  echo "Setting root password for outer base:"
   chroot /mnt/outer passwd
-  echo; echo "Setting root password for inner base:"
+fi
+
+if [ -n "$innerrootpw" ]; then
+  echo "$innerrootpw" | chroot /mnt pw mod user root -h 0
+else
+  echo
+  echo "Setting root password for inner base:"
   chroot /mnt passwd
 fi
 
