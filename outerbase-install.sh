@@ -72,6 +72,24 @@ if [ -n "$outerbasetxz" ] && [ ! -f "$outerbasetxz" ]; then
   exit
 fi
 
+# path to custom package for inner base
+# leave empty to use stock base system (/usr/freebsd-dist/base.txz)
+innerbasetxz=
+
+if [ -n "$innerbasetxz" ] && [ ! -f "$innerbasetxz" ]; then
+  echo "$innerbasetxz does not exist."
+  exit
+fi
+
+# path to custom kernel package
+# leave empty to use stock kernel (/usr/freebsd-dist/kernel.txz)
+kerneltxz=
+
+if [ -n "$kerneltxz" ] && [ ! -f "$kerneltxz" ]; then
+  echo "$kerneltxz does not exist."
+  exit
+fi
+
 # if set, put "PermitRootLogin yes" in /etc/sshd.conf for outer and inner base
 # leave empty for default (SSH root login forbidden)
 rootSSH=set
@@ -271,7 +289,12 @@ tar -xvpPf $outerbasetxz $tarexcl -C /mnt/outer
 ### inner base install
 ###
 
-tar -xvpPf /usr/freebsd-dist/base.txz --exclude='boot/' -C /mnt
+# use custom innerbasetxz if set
+if [ -z "$innerbasetxz" ]; then
+  innerbasetxz=/usr/freebsd-dist/base.txz
+fi
+
+tar -xvpPf $innerbasetxz --exclude='boot/' -C /mnt
 ln -s /outer/boot /mnt/boot
 chflags -h sunlink /mnt/boot
 
@@ -280,7 +303,11 @@ chflags -h sunlink /mnt/boot
 ### shared /boot and kernel
 ###
 
-tar -xvpPf /usr/freebsd-dist/kernel.txz -C /mnt/outer
+# use custom kernel.txz if set
+if [ -z "$kerneltxz" ]; then
+  kerneltxz=/usr/freebsd-dist/kernel.txz
+fi
+tar -xvpPf $kerneltxz -C /mnt/outer
 
 if [ -z "$customdrives" ]; then
 
