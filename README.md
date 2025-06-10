@@ -297,6 +297,8 @@ When using a stock system as the outer base, the update procedure is as easy as 
 #### custom minimal outer base: building on the target machine
 A custom minimal outer base needs to be re-built with every update (e.g. from `13.2-RELEASE-p4` to `-p5`). The following steps describe the procedure for building and installing on the same machine. Further down, there's also a description on how to update a non-build machine.
 
+> **A note on release upgrades:** When upgrading to a new release (e.g. from 14.2-RELEASE to 14.3-RELEASE), a different order of steps is advised. The reason is that you cannot build a 14.3 custom minimal outer base with a system running 14.2, *unless you also bootstrap the build by building the compiler*, which makes the build process take extremely long. In this case, it is advisable to **first** binary-upgrade the inner base, and **then** build and install the custom minimal outer base as outlined below.
+
 ##### step 1: sources
 
 First your should have the sources on hand. Download them like so:
