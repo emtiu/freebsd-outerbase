@@ -1,6 +1,7 @@
 #!/bin/sh
+set -x
 
-### version 0.4-pkgbase (FreeBSD 15.0 adaptation)
+### version 0.3
 
 ### usage
 #
@@ -19,7 +20,7 @@ set -e
 # if set, configure boot to BIOS+GPT, otherwise assumes UEFI+GPT. This is for
 # older systems which do not support UEFI. From gptboot(8): "gptboot is used on
 # BIOS-based computers to boot from a UFS partition on a GPT-partitioned disk".
-gptboot=
+gptboot=1
 
 # if set, skip partitioning entirely and rely on drives already configured
 # to install the inner and outer base into. This allows for custom encryption,
@@ -99,13 +100,13 @@ if [ -z "$customdrives" ]; then
 
   # called without argument: present drive info and exit
   if [ -z $1 ]; then
-    dialog --msgbox \
+    bsddialog --msgbox \
       "This script expects to be called with a device name." 0 0
 
-    dialog --no-collapse --title "FYI: \`geom disk list\`" \
+    bsddialog --title "FYI: \`geom disk list\`" \
       --yes-label "Show \`gpart show -p\`" --no-label Exit \
       --yesno "$(geom disk list)" 0 0 && \
-    dialog --no-collapse --title "FYI: \`gpart show -p $drive\`" \
+    bsddialog --title "FYI: \`gpart show -p $drive\`" \
       --ok-label Exit --msgbox "$(gpart show -p)" 0 0
 
     exit
@@ -115,8 +116,8 @@ if [ -z "$customdrives" ]; then
   drive=$1
   targetpart=$(geom disk list $drive; gpart show -p $drive 2>&1 || true )
 
-  dialog --title "FYI: \`geom disk list $drive; gpart show -p $drive\`" \
-    --no-collapse --yes-label "DESTROY and use $drive" --no-label Abort \
+  bsddialog --title "FYI: \`geom disk list $drive; gpart show -p $drive\`" \
+    --yes-label "DESTROY and use $drive" --no-label Abort \
     --yesno "$targetpart" 0 0 || exit
 
 else
@@ -130,8 +131,8 @@ else
   [ -f "$bootloaderconf" ]       # fails if no prepared loader.conf found
 
   # if tests passed: verify to continue
-  dialog --title "FYI: zpool list -v $poolname" \
-    --no-collapse --yes-label "Proceed with install" --no-label Abort \
+  bsddialog --title "FYI: zpool list -v $poolname" \
+    --yes-label "Proceed with install" --no-label Abort \
     --yesno "$(zpool list -v $poolname)" 0 0 || exit
 
 fi
@@ -205,8 +206,10 @@ fi
 ### inner zfs
 ###
 
+INNER_CHROOT=/mnt
+
 if [ -z "$customdrives" ]; then
-  zpool create -o ashift=12 -m none -o altroot=/mnt $poolname /dev/gpt/inner.eli
+  zpool create -o ashift=12 -m none -o altroot=$INNER_CHROOT $poolname /dev/gpt/inner.eli
 fi
 
 # default layout from the 14.1-RELEASE installer, taken from:
@@ -232,7 +235,7 @@ zfs create -o setuid=off                      $poolname/var/tmp
 
 if [ -z "$customdrives" ]; then
 
-  if ! dialog --no-collapse --yes-label Install --no-label Abort \
+  if ! bsddialog --yes-label Install --no-label Abort \
     --yesno "$(gpart show -pl $drive; ls -lt /dev/gpt; echo; zfs list)" 0 0; then
     echo; echo "To start over, run the following commands:"; echo
     echo " # zpool export $poolname"
@@ -247,14 +250,15 @@ fi
 ### outer filesystem
 ###
 
-mkdir /mnt/outer
+OUTER_CHROOT=$INNER_CHROOT/outer
+mkdir $OUTER_CHROOT
 
 if [ -z "$customdrives" ]; then
   outerbasedevice=/dev/gpt/outer
 fi
 
 newfs -m2 $outerbasedevice
-mount $outerbasedevice /mnt/outer
+mount $outerbasedevice $OUTER_CHROOT
 
 
 ###
@@ -269,14 +273,15 @@ fi
 
 
 ###
-### outer base install (pkgbase)
+### outer base install
 ###
 
 echo "Installing outer base system via pkgbase..."
 
 # Set up pkg environment for outer base installation
-OUTER_CHROOT=/mnt/outer
-PKG_OUTER="pkg --rootdir $OUTER_CHROOT -o IGNORE_OSVERSION=yes"
+REPOS_DIR=/usr/share/bsdinstall
+PKG_OUTER="pkg --rootdir $OUTER_CHROOT --repo-conf-dir $REPOS_DIR -o IGNORE_OSVERSION=yes"
+
 
 # Copy pkg keys to outer base
 mkdir -p $OUTER_CHROOT/usr/share/keys
@@ -339,14 +344,14 @@ fi
 
 
 ###
-### inner base install (pkgbase)
+### inner base install
 ###
 
 echo "Installing inner base system via pkgbase..."
+# FIXME refactor
 
 # Set up pkg environment for inner base installation
-INNER_CHROOT=/mnt
-PKG_INNER="pkg --rootdir $INNER_CHROOT -o IGNORE_OSVERSION=yes"
+PKG_INNER="pkg --rootdir $INNER_CHROOT --repo-conf-dir $REPOS_DIR -o IGNORE_OSVERSION=yes"
 
 # Copy pkg keys to inner base
 mkdir -p $INNER_CHROOT/usr/share/keys
@@ -407,12 +412,13 @@ echo 'FreeBSD-base: { enabled: yes }' > $INNER_CHROOT/usr/local/etc/pkg/repos/Fr
 
 # The kernel is now installed via packages in both bases
 # Create symlink from inner to outer for shared /boot
-ln -s /outer/boot /mnt/boot
-chflags -h sunlink /mnt/boot
+rm -fr $INNER_CHROOT/boot
+ln -s /outer/boot $INNER_CHROOT/boot
+chflags -h sunlink $INNER_CHROOT/boot
 
 if [ -z "$customdrives" ]; then
 
-  cat <<EOD >> /mnt/outer/boot/loader.conf
+  cat <<EOD >> $OUTER_CHROOT/boot/loader.conf
 autoboot_delay="4"
 vfs.root.mountfrom="ufs:/dev/gpt/outer"
 geom_eli_load="YES"
@@ -421,7 +427,7 @@ EOD
 
 else
 
-  cat $bootloaderconf >> /mnt/outer/boot/loader.conf
+  cat $bootloaderconf >> $OUTER_CHROOT/boot/loader.conf
 
 fi
 
@@ -430,29 +436,30 @@ fi
 ### common config: system
 ###
 
+# FIXME should this happen in outer?
 hostname $hostname
-chroot /mnt/outer sysrc hostname=$hostname
-chroot /mnt sysrc hostname=$hostname
+sysrc -f $OUTER_CHROOT/etc/rc.conf hostname=$hostname
+sysrc -f $INNER_CHROOT/etc/rc.conf hostname=$hostname
 
 # ensure outer and inner have identical hostid to avoid zpool import confusion
-chroot /mnt/outer service hostid onestart
-chroot /mnt/outer service hostid_save onestart
-cp /mnt/outer/etc/hostid /mnt/etc/
+chroot $OUTER_CHROOT service hostid onestart
+chroot $OUTER_CHROOT service hostid_save onestart
+cp $OUTER_CHROOT/etc/hostid $INNER_CHROOT/etc/
 
 if [ -n "$outerrootpw" ]; then
-  echo "$outerrootpw" | chroot /mnt/outer pw mod user root -h 0
+  echo "$outerrootpw" | chroot $OUTER_CHROOT pw mod user root -h 0
 else
   echo
   echo "Setting root password for outer base:"
-  chroot /mnt/outer passwd
+  chroot $OUTER_CHROOT passwd
 fi
 
 if [ -n "$innerrootpw" ]; then
-  echo "$innerrootpw" | chroot /mnt pw mod user root -h 0
+  echo "$innerrootpw" | chroot $INNER_CHROOT pw mod user root -h 0
 else
   echo
   echo "Setting root password for inner base:"
-  chroot /mnt passwd
+  chroot $INNER_CHROOT passwd
 fi
 
 
@@ -460,20 +467,20 @@ fi
 ### common config: ssh
 ###
 
-chroot /mnt/outer sysrc sshd_enable=YES
-chroot /mnt sysrc sshd_enable=YES
+sysrc -f $OUTER_CHROOT/etc/rc.conf sshd_enable=YES
+sysrc -f $INNER_CHROOT/etc/rc.conf sshd_enable=YES
 
 [ -n "$rootSSH" ] && \
- sed -i '' -e 's/^#\(PermitRootLogin\).*/\1 yes/' /mnt/outer/etc/ssh/sshd_config
+ sed -i '' -e 's/^#\(PermitRootLogin\).*/\1 yes/' $OUTER_CHROOT/etc/ssh/sshd_config
 
-chroot /mnt/outer service sshd onekeygen
+chroot $OUTER_CHROOT service sshd onekeygen
 
-rm -r /mnt/etc/ssh
-cp -r /mnt/outer/etc/ssh /mnt/etc/
+rm -r $INNER_CHROOT/etc/ssh
+cp -r $OUTER_CHROOT/etc/ssh $INNER_CHROOT/etc/
 
 if [ -n "$separateSSHhostkeys" ]; then
-  rm /mnt/etc/ssh/ssh_host_*_key*
-  chroot /mnt service sshd onekeygen
+  rm $INNER_CHROOT/etc/ssh/ssh_host_*_key*
+  chroot $INNER_CHROOT service sshd onekeygen
 fi
 
 
@@ -483,34 +490,34 @@ fi
 
 # this is to stop the outer base from auto-importing the zpool, as it's
 # locked by geli anyway. It's no problem to later import the pool by unlock.sh
-chroot /mnt/outer sysrc zfs_enable=NO
+sysrc -f $OUTER_CHROOT/etc/rc.conf zfs_enable=NO
 
-chroot /mnt/outer sysrc tmpmfs=YES
-chroot /mnt/outer sysrc tmpsize=500m
+sysrc -f $OUTER_CHROOT/etc/rc.conf tmpmfs=YES
+sysrc -f $OUTER_CHROOT/etc/rc.conf tmpsize=500m
 if [ -n "$varmfs" ]; then
-  chroot /mnt/outer sysrc varmfs=YES
-  chroot /mnt/outer sysrc varsize=500m
+  sysrc -f $OUTER_CHROOT/etc/rc.conf varmfs=YES
+  sysrc -f $OUTER_CHROOT/etc/rc.conf varsize=500m
 fi
 
 if [ -z "$customdrives" ]; then
 
   if [ -z "$gptboot" ]; then
-    cat <<EOD >> /mnt/outer/etc/fstab
+    cat <<EOD >> $OUTER_CHROOT/etc/fstab
 /dev/gpt/efi   /boot/efi msdosfs rw,noauto  1 1
 EOD
   fi
-  cat <<EOD >> /mnt/outer/etc/fstab
+  cat <<EOD >> $OUTER_CHROOT/etc/fstab
 /dev/gpt/outer /         ufs     rw,noatime 1 1
 EOD
 # the outer base doesn't get swap, as there should be no need for it
 
 else
 
-  cat $customfstabouter >> /mnt/outer/etc/fstab
+  cat $customfstabouter >> $OUTER_CHROOT/etc/fstab
 
 fi
 
-cat <<EOD > /mnt/outer/root/unlock.sh
+cat <<EOD > $OUTER_CHROOT/root/unlock.sh
 #!/bin/sh
 set -e
 
@@ -536,11 +543,11 @@ else
   reboot -r
 fi
 EOD
-chmod +x /mnt/outer/root/unlock.sh
+chmod +x $OUTER_CHROOT/root/unlock.sh
 
-dialog --msgbox "Now editing _outer base_ configuration." 0 0
-mount -t devfs devfs /mnt/outer/dev
-chroot /mnt/outer/ bsdconfig || true
+bsddialog --msgbox "Now editing _outer base_ configuration." 0 0
+mount -t devfs devfs $OUTER_CHROOT/dev
+chroot $OUTER_CHROOT/ bsdconfig || true
 
 
 ###
@@ -548,32 +555,32 @@ chroot /mnt/outer/ bsdconfig || true
 ###
 
 # upon `reboot -r`, the pool is already imported. this ensures `zfs mount -a`
-chroot /mnt/ sysrc zfs_enable=YES
+chroot $INNER_CHROOT/ sysrc zfs_enable=YES
 
 if [ -z "$customdrives" ]; then
 
   if [ -z "$gptboot" ]; then
-    cat <<EOD >> /mnt/etc/fstab
+    cat <<EOD >> $INNER_CHROOT/etc/fstab
 /dev/gpt/efi      /boot/efi msdosfs rw,noauto  1 1
 EOD
   fi
-  cat <<EOD >> /mnt/etc/fstab
+  cat <<EOD >> $INNER_CHROOT/etc/fstab
 /dev/gpt/outer    /outer    ufs     rw,noatime 1 1
 tmpfs             /tmp      tmpfs   rw,mode=777,nosuid 0 0
 EOD
 
-  [ -n "$swapsize" ] && [ "$swapsize" != "0" ] && cat <<EOD >> /mnt/etc/fstab
+  [ -n "$swapsize" ] && [ "$swapsize" != "0" ] && cat <<EOD >> $INNER_CHROOT/etc/fstab
 /dev/gpt/swap.eli none      swap    sw 0 0
 EOD
 else
 
-  cat $customfstabinner >> /mnt/etc/fstab
+  cat $customfstabinner >> $INNER_CHROOT/etc/fstab
 
 fi
 
-dialog --msgbox "Now editing _inner base_ configuration." 0 0
-mount -t devfs devfs /mnt/dev
-chroot /mnt/ bsdconfig || true
+bsddialog --msgbox "Now editing _inner base_ configuration." 0 0
+mount -t devfs devfs $INNER_CHROOT/dev
+chroot $INNER_CHROOT/ bsdconfig || true
 
 
 ###
@@ -582,16 +589,16 @@ chroot /mnt/ bsdconfig || true
 
 killall dhclient || true
 
-if dialog --yes-label "Yes, export" --no-label "No, inspect" \
+if bsddialog --yes-label "Yes, export" --no-label "No, inspect" \
    --yesno "All done. Unmount all filesystems and export $poolname?" 0 0; then
-  umount -f /mnt/outer/dev
-  umount -f /mnt/dev
-  umount /mnt/outer
+  umount -f $OUTER_CHROOT/dev
+  umount -f $INNER_CHROOT/dev
+  umount $OUTER_CHROOT
   zpool export $poolname
   if [ -z "$customdrives" ]; then
     geli detach gpt/inner.eli
   else
-    echo; echo "!!! Don't forget to tweak /mnt/outer/root/unlock.sh !!!"; echo
+    echo; echo "!!! Don't forget to tweak $OUTER_CHROOT/root/unlock.sh !!!"; echo
   fi
   exit
 fi
@@ -599,9 +606,9 @@ fi
 echo; echo
 echo "--- Before rebooting, do the following: ---"
 echo
-echo "# umount -f /mnt/outer/dev"
-echo "# umount -f /mnt/dev"
-echo "# umount /mnt/outer"
+echo "# umount -f $OUTER_CHROOT/dev"
+echo "# umount -f $INNER_CHROOT/dev"
+echo "# umount $OUTER_CHROOT"
 echo "# zpool export $poolname"
 echo
 echo "Otherwise, your first unlock.sh from the outer base will fail to import"
@@ -612,5 +619,5 @@ echo
 echo "... and just reboot."; echo
 
 if [ -n "$customdrives" ]; then
-  echo; echo "!!! Don't forget to tweak /mnt/outer/root/unlock.sh !!!"; echo
+  echo; echo "!!! Don't forget to tweak $OUTER_CHROOT/root/unlock.sh !!!"; echo
 fi
