@@ -1,5 +1,4 @@
 #!/bin/sh
-set -x
 
 ### version 0.3
 
@@ -273,67 +272,84 @@ fi
 
 
 ###
+### pkgbase installation function
+###
+
+# Install FreeBSD base system via pkgbase packages
+# Args: $1 = chroot path, $2 = description (e.g., "outer"), $3 = space-separated package sets
+install_pkgbase() {
+  local chroot_path="$1"
+  local desc="$2"; shift 2
+  local user_pkgsets="$*"
+
+  echo "Installing $desc base system via pkgbase..."
+
+  local repos_dir=/usr/share/bsdinstall
+  local pkg_cmd="pkg --rootdir $chroot_path --repo-conf-dir $repos_dir -o IGNORE_OSVERSION=yes"
+
+  # Copy pkg keys to chroot
+  mkdir -p "$chroot_path/usr/share/keys"
+  cp -R /usr/share/keys/* "$chroot_path/usr/share/keys/"
+
+  # Update pkg repositories
+  $pkg_cmd update
+
+  # Build package list - always install minimal, kernel, and pkg (if available)
+  local packages="FreeBSD-set-minimal FreeBSD-kernel-generic"
+
+  # Check if pkg package is available
+  if $pkg_cmd rquery -U -r FreeBSD-base %n | grep -q "^pkg$"; then
+    packages="$packages pkg"
+  fi
+
+  # Add user-specified package sets
+  for pkgset in $user_pkgsets; do
+    packages="$packages FreeBSD-set-$pkgset"
+
+    # Add debug packages if requested
+    if [ -n "$install_debug" ]; then
+      if $pkg_cmd rquery -U -r FreeBSD-base %n | grep -q "^FreeBSD-set-$pkgset-dbg$"; then
+        packages="$packages FreeBSD-set-$pkgset-dbg"
+      fi
+    fi
+  done
+
+  # Add kernel debug symbols if requested
+  if [ -n "$install_debug" ]; then
+    packages="$packages FreeBSD-kernel-generic-dbg"
+  fi
+
+  # Not part of FreeBSD-set-minimal, but FreeBSD-set-optional
+  packages="$packages FreeBSD-ssh FreeBSD-bsdconfig"
+
+  # Fetch packages (with retry logic)
+  while ! $pkg_cmd install -U -F -y -r FreeBSD-base $packages; do
+    echo "Fetching packages failed. Retry? (y/n)"
+    read answer
+    if [ "$answer" != "y" ]; then
+      exit 1
+    fi
+  done
+
+  # Install packages
+  if ! $pkg_cmd install -U -y -r FreeBSD-base $packages; then
+    echo "Package installation failed!"
+    exit 1
+  fi
+
+  # Enable FreeBSD-base repository for this system
+  mkdir -p "$chroot_path/usr/local/etc/pkg/repos"
+  echo 'FreeBSD-base: { enabled: yes }' > "$chroot_path/usr/local/etc/pkg/repos/FreeBSD.conf"
+
+  echo "$desc base system installation complete."
+}
+
+
+###
 ### outer base install
 ###
 
-echo "Installing outer base system via pkgbase..."
-
-# Set up pkg environment for outer base installation
-REPOS_DIR=/usr/share/bsdinstall
-PKG_OUTER="pkg --rootdir $OUTER_CHROOT --repo-conf-dir $REPOS_DIR -o IGNORE_OSVERSION=yes"
-
-
-# Copy pkg keys to outer base
-mkdir -p $OUTER_CHROOT/usr/share/keys
-cp -R /usr/share/keys/* $OUTER_CHROOT/usr/share/keys/
-
-# Update pkg repositories
-$PKG_OUTER update
-
-# Build package list for outer base
-# Always install minimal, kernel, and pkg (if available)
-OUTER_PACKAGES="FreeBSD-set-minimal FreeBSD-kernel-generic"
-
-# Check if pkg package is available
-if $PKG_OUTER rquery -U -r FreeBSD-base %n | grep -q "^pkg$"; then
-  OUTER_PACKAGES="$OUTER_PACKAGES pkg"
-fi
-
-# Add user-specified package sets
-for pkgset in $outerpkgsets; do
-  OUTER_PACKAGES="$OUTER_PACKAGES FreeBSD-set-$pkgset"
-
-  # Add debug packages if requested
-  if [ -n "$install_debug" ]; then
-    if $PKG_OUTER rquery -U -r FreeBSD-base %n | grep -q "^FreeBSD-set-$pkgset-dbg$"; then
-      OUTER_PACKAGES="$OUTER_PACKAGES FreeBSD-set-$pkgset-dbg"
-    fi
-  fi
-done
-
-# Add kernel debug symbols if requested
-if [ -n "$install_debug" ]; then
-  OUTER_PACKAGES="$OUTER_PACKAGES FreeBSD-kernel-generic-dbg"
-fi
-
-# Fetch packages (with retry logic)
-while ! $PKG_OUTER install -U -F -y -r FreeBSD-base $OUTER_PACKAGES; do
-  echo "Fetching packages failed. Retry? (y/n)"
-  read answer
-  if [ "$answer" != "y" ]; then
-    exit 1
-  fi
-done
-
-# Install packages
-if ! $PKG_OUTER install -U -y -r FreeBSD-base $OUTER_PACKAGES; then
-  echo "Package installation failed!"
-  exit 1
-fi
-
-# Enable FreeBSD-base repository for the outer base
-mkdir -p $OUTER_CHROOT/usr/local/etc/pkg/repos
-echo 'FreeBSD-base: { enabled: yes }' > $OUTER_CHROOT/usr/local/etc/pkg/repos/FreeBSD.conf
+install_pkgbase "$OUTER_CHROOT" "outer" $outerpkgsets
 
 # Extract /var but leave it empty for varmfs if requested
 if [ -n "$varmfs" ]; then
@@ -347,63 +363,7 @@ fi
 ### inner base install
 ###
 
-echo "Installing inner base system via pkgbase..."
-# FIXME refactor
-
-# Set up pkg environment for inner base installation
-PKG_INNER="pkg --rootdir $INNER_CHROOT --repo-conf-dir $REPOS_DIR -o IGNORE_OSVERSION=yes"
-
-# Copy pkg keys to inner base
-mkdir -p $INNER_CHROOT/usr/share/keys
-cp -R /usr/share/keys/* $INNER_CHROOT/usr/share/keys/
-
-# Update pkg repositories
-$PKG_INNER update
-
-# Build package list for inner base
-# Always install minimal, kernel, and pkg (if available)
-INNER_PACKAGES="FreeBSD-set-minimal FreeBSD-kernel-generic"
-
-# Check if pkg package is available
-if $PKG_INNER rquery -U -r FreeBSD-base %n | grep -q "^pkg$"; then
-  INNER_PACKAGES="$INNER_PACKAGES pkg"
-fi
-
-# Add user-specified package sets
-for pkgset in $innerpkgsets; do
-  INNER_PACKAGES="$INNER_PACKAGES FreeBSD-set-$pkgset"
-
-  # Add debug packages if requested
-  if [ -n "$install_debug" ]; then
-    if $PKG_INNER rquery -U -r FreeBSD-base %n | grep -q "^FreeBSD-set-$pkgset-dbg$"; then
-      INNER_PACKAGES="$INNER_PACKAGES FreeBSD-set-$pkgset-dbg"
-    fi
-  fi
-done
-
-# Add kernel debug symbols if requested
-if [ -n "$install_debug" ]; then
-  INNER_PACKAGES="$INNER_PACKAGES FreeBSD-kernel-generic-dbg"
-fi
-
-# Fetch packages (with retry logic)
-while ! $PKG_INNER install -U -F -y -r FreeBSD-base $INNER_PACKAGES; do
-  echo "Fetching packages failed. Retry? (y/n)"
-  read answer
-  if [ "$answer" != "y" ]; then
-    exit 1
-  fi
-done
-
-# Install packages
-if ! $PKG_INNER install -U -y -r FreeBSD-base $INNER_PACKAGES; then
-  echo "Package installation failed!"
-  exit 1
-fi
-
-# Enable FreeBSD-base repository for the inner base
-mkdir -p $INNER_CHROOT/usr/local/etc/pkg/repos
-echo 'FreeBSD-base: { enabled: yes }' > $INNER_CHROOT/usr/local/etc/pkg/repos/FreeBSD.conf
+install_pkgbase "$INNER_CHROOT" "inner" $innerpkgsets
 
 
 ###
@@ -436,8 +396,6 @@ fi
 ### common config: system
 ###
 
-# FIXME should this happen in outer?
-hostname $hostname
 sysrc -f $OUTER_CHROOT/etc/rc.conf hostname=$hostname
 sysrc -f $INNER_CHROOT/etc/rc.conf hostname=$hostname
 
