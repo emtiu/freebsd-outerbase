@@ -1,6 +1,6 @@
 #!/bin/sh
 
-### version 0.3
+### version 0.4-pkgbase (FreeBSD 15.0 adaptation)
 
 ### usage
 #
@@ -58,37 +58,25 @@ gelipassphrase=
 swapsize=2G
 
 # size of the outer base UFS partition. recommendation:
-# 1600M - stock base system
+# 1600M - stock base system (pkgbase minimal)
 # 1000M - custom minimal base
 # add space for larger custom kernels or multiple kernels as needed
 outersize=1600M
 
-# path to custom package for outer base
-# leave empty to use stock base system (/usr/freebsd-dist/base.txz)
-outerbasetxz=
+# pkgbase package sets to install for outer base
+# minimal: always installed (required)
+# Leave empty for minimal-only installation
+# Add: "base" for full base, "lib32" for 32-bit compat, etc.
+outerpkgsets=""
 
-if [ -n "$outerbasetxz" ] && [ ! -f "$outerbasetxz" ]; then
-  echo "$outerbasetxz does not exist."
-  exit
-fi
+# pkgbase package sets to install for inner base
+# minimal: always installed (required)
+# Common options: "base", "lib32", "src", "tests"
+innerpkgsets="base"
 
-# path to custom package for inner base
-# leave empty to use stock base system (/usr/freebsd-dist/base.txz)
-innerbasetxz=
-
-if [ -n "$innerbasetxz" ] && [ ! -f "$innerbasetxz" ]; then
-  echo "$innerbasetxz does not exist."
-  exit
-fi
-
-# path to custom kernel package
-# leave empty to use stock kernel (/usr/freebsd-dist/kernel.txz)
-kerneltxz=
-
-if [ -n "$kerneltxz" ] && [ ! -f "$kerneltxz" ]; then
-  echo "$kerneltxz does not exist."
-  exit
-fi
+# if set, install debug symbols for selected packages
+# This will install -dbg variants of installed package sets
+install_debug=""
 
 # if set, put "PermitRootLogin yes" in /etc/sshd.conf for outer and inner base
 # leave empty for default (SSH root login forbidden)
@@ -270,44 +258,157 @@ mount $outerbasedevice /mnt/outer
 
 
 ###
-### outer base install
+### bootstrap pkg
 ###
 
-# use custom outerbase.txz if set
-if [ -z "$outerbasetxz" ]; then
-  outerbasetxz=/usr/freebsd-dist/base.txz
+# Bootstrap pkg if not already available
+if ! pkg -N > /dev/null 2>&1; then
+  echo "Bootstrapping pkg on the host system"
+  pkg bootstrap -y
 fi
 
-# extract /var but leave it empty for varmfs
+
+###
+### outer base install (pkgbase)
+###
+
+echo "Installing outer base system via pkgbase..."
+
+# Set up pkg environment for outer base installation
+OUTER_CHROOT=/mnt/outer
+PKG_OUTER="pkg --rootdir $OUTER_CHROOT -o IGNORE_OSVERSION=yes"
+
+# Copy pkg keys to outer base
+mkdir -p $OUTER_CHROOT/usr/share/keys
+cp -R /usr/share/keys/* $OUTER_CHROOT/usr/share/keys/
+
+# Update pkg repositories
+$PKG_OUTER update
+
+# Build package list for outer base
+# Always install minimal, kernel, and pkg (if available)
+OUTER_PACKAGES="FreeBSD-set-minimal FreeBSD-kernel-generic"
+
+# Check if pkg package is available
+if $PKG_OUTER rquery -U -r FreeBSD-base %n | grep -q "^pkg$"; then
+  OUTER_PACKAGES="$OUTER_PACKAGES pkg"
+fi
+
+# Add user-specified package sets
+for pkgset in $outerpkgsets; do
+  OUTER_PACKAGES="$OUTER_PACKAGES FreeBSD-set-$pkgset"
+
+  # Add debug packages if requested
+  if [ -n "$install_debug" ]; then
+    if $PKG_OUTER rquery -U -r FreeBSD-base %n | grep -q "^FreeBSD-set-$pkgset-dbg$"; then
+      OUTER_PACKAGES="$OUTER_PACKAGES FreeBSD-set-$pkgset-dbg"
+    fi
+  fi
+done
+
+# Add kernel debug symbols if requested
+if [ -n "$install_debug" ]; then
+  OUTER_PACKAGES="$OUTER_PACKAGES FreeBSD-kernel-generic-dbg"
+fi
+
+# Fetch packages (with retry logic)
+while ! $PKG_OUTER install -U -F -y -r FreeBSD-base $OUTER_PACKAGES; do
+  echo "Fetching packages failed. Retry? (y/n)"
+  read answer
+  if [ "$answer" != "y" ]; then
+    exit 1
+  fi
+done
+
+# Install packages
+if ! $PKG_OUTER install -U -y -r FreeBSD-base $OUTER_PACKAGES; then
+  echo "Package installation failed!"
+  exit 1
+fi
+
+# Enable FreeBSD-base repository for the outer base
+mkdir -p $OUTER_CHROOT/usr/local/etc/pkg/repos
+echo 'FreeBSD-base: { enabled: yes }' > $OUTER_CHROOT/usr/local/etc/pkg/repos/FreeBSD.conf
+
+# Extract /var but leave it empty for varmfs if requested
 if [ -n "$varmfs" ]; then
-  tarexcl="--exclude './var/?*'"
+  # /var should already exist from package installation
+  # Just ensure it's empty
+  rm -rf $OUTER_CHROOT/var/*
 fi
-tar -xvpPf $outerbasetxz $tarexcl -C /mnt/outer
 
 
 ###
-### inner base install
+### inner base install (pkgbase)
 ###
 
-# use custom innerbasetxz if set
-if [ -z "$innerbasetxz" ]; then
-  innerbasetxz=/usr/freebsd-dist/base.txz
+echo "Installing inner base system via pkgbase..."
+
+# Set up pkg environment for inner base installation
+INNER_CHROOT=/mnt
+PKG_INNER="pkg --rootdir $INNER_CHROOT -o IGNORE_OSVERSION=yes"
+
+# Copy pkg keys to inner base
+mkdir -p $INNER_CHROOT/usr/share/keys
+cp -R /usr/share/keys/* $INNER_CHROOT/usr/share/keys/
+
+# Update pkg repositories
+$PKG_INNER update
+
+# Build package list for inner base
+# Always install minimal, kernel, and pkg (if available)
+INNER_PACKAGES="FreeBSD-set-minimal FreeBSD-kernel-generic"
+
+# Check if pkg package is available
+if $PKG_INNER rquery -U -r FreeBSD-base %n | grep -q "^pkg$"; then
+  INNER_PACKAGES="$INNER_PACKAGES pkg"
 fi
 
-tar -xvpPf $innerbasetxz --exclude='boot/' -C /mnt
-ln -s /outer/boot /mnt/boot
-chflags -h sunlink /mnt/boot
+# Add user-specified package sets
+for pkgset in $innerpkgsets; do
+  INNER_PACKAGES="$INNER_PACKAGES FreeBSD-set-$pkgset"
+
+  # Add debug packages if requested
+  if [ -n "$install_debug" ]; then
+    if $PKG_INNER rquery -U -r FreeBSD-base %n | grep -q "^FreeBSD-set-$pkgset-dbg$"; then
+      INNER_PACKAGES="$INNER_PACKAGES FreeBSD-set-$pkgset-dbg"
+    fi
+  fi
+done
+
+# Add kernel debug symbols if requested
+if [ -n "$install_debug" ]; then
+  INNER_PACKAGES="$INNER_PACKAGES FreeBSD-kernel-generic-dbg"
+fi
+
+# Fetch packages (with retry logic)
+while ! $PKG_INNER install -U -F -y -r FreeBSD-base $INNER_PACKAGES; do
+  echo "Fetching packages failed. Retry? (y/n)"
+  read answer
+  if [ "$answer" != "y" ]; then
+    exit 1
+  fi
+done
+
+# Install packages
+if ! $PKG_INNER install -U -y -r FreeBSD-base $INNER_PACKAGES; then
+  echo "Package installation failed!"
+  exit 1
+fi
+
+# Enable FreeBSD-base repository for the inner base
+mkdir -p $INNER_CHROOT/usr/local/etc/pkg/repos
+echo 'FreeBSD-base: { enabled: yes }' > $INNER_CHROOT/usr/local/etc/pkg/repos/FreeBSD.conf
 
 
 ###
 ### shared /boot and kernel
 ###
 
-# use custom kernel.txz if set
-if [ -z "$kerneltxz" ]; then
-  kerneltxz=/usr/freebsd-dist/kernel.txz
-fi
-tar -xvpPf $kerneltxz -C /mnt/outer
+# The kernel is now installed via packages in both bases
+# Create symlink from inner to outer for shared /boot
+ln -s /outer/boot /mnt/boot
+chflags -h sunlink /mnt/boot
 
 if [ -z "$customdrives" ]; then
 
