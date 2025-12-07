@@ -19,7 +19,7 @@ set -e
 # if set, configure boot to BIOS+GPT, otherwise assumes UEFI+GPT. This is for
 # older systems which do not support UEFI. From gptboot(8): "gptboot is used on
 # BIOS-based computers to boot from a UFS partition on a GPT-partitioned disk".
-gptboot=1
+gptboot=
 
 # if set, skip partitioning entirely and rely on drives already configured
 # to install the inner and outer base into. This allows for custom encryption,
@@ -370,8 +370,7 @@ install_pkgbase "$INNER_CHROOT" "inner" $innerpkgsets
 ### shared /boot and kernel
 ###
 
-# The kernel is now installed via packages in both bases
-# Create symlink from inner to outer for shared /boot
+# Create symlink from inner to outer for shared /boot, which contains the kernel
 rm -fr $INNER_CHROOT/boot
 ln -s /outer/boot $INNER_CHROOT/boot
 chflags -h sunlink $INNER_CHROOT/boot
