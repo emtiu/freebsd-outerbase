@@ -163,13 +163,11 @@ The inner base can then be inspected or manipulated at `/mnt`. At any later time
 #### basic Boot Environments support
 There is some support for Boot Environments (BE) in the inner base system. They can be created and managed normally with `bectl(8)` or `beadm(1)`.
 
-When a BE is activated, the name of the corresponding zfs datset is set in the zpool's `bootfs` property. When a regular bootloader boots from the pool, it it looks for the system in that dataset and mounts it at `/`.
+When a BE is activated, the name of the corresponding zfs datset is set in the zpool's `bootfs` property. When a regular bootloader boots from the pool, it it looks for the system in that dataset and mounts it at `/`. When `/root/unlock.sh` has imported the zpool that contains the inner base, it also reads the zpool's `bootfs` property and sets `vfs.root.mountfrom` accordingly.
 
-When `/root/unlock.sh` has imported the zpool that contains the inner base, it also reads the zpool's `bootfs` property and sets `vfs.root.mountfrom` accordingly. When `reboot -r` is issued, the system reboots with that dataset as the new `/`, much the same as a normal boot.
+**However, there is one important difference to keep in mind:** When activating a BE, you must manually set the `canmount=on` property on the BE for the next boot, and set `canmount=noauto` for all others. If you fail to do this, the inner base will be inoperable after unlocking. Luckily, this condition can be fixed by running `sh unlock -n` and setting the appropriate properties from the outer base.
 
-The main difference with this setup is that `/boot` is not part of the inner base system, since it must reside on the outer base UFS partition. Therefore, `/boot` is not covered by BE protection when doing upgrades for example.
-
-Otherwise, BEs should work as expected, but haven't been exhaustively tested.
+Another difference with this setup is that `/boot` is not part of the inner base system, since it must reside on the outer base UFS partition. Therefore, `/boot` is not covered by BE protection when doing upgrades for example.
 
 ### characteristics of the installed systems
 These are the unique/surprising/nonstandard properties of the systems installed by this install script. For tunable options, see **variables in the install script** above. For a description of the booting process, see **installing** and **booting and unlocking** above.
