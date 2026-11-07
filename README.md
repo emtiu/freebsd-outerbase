@@ -51,11 +51,14 @@ For the question of SSH host keys, see **variables in the install script** below
 * **2021-04**: version 0.1, initial release
 
 ## quick start
-1. Boot a stock FreeBSD installer image on the target machine (i.e. option `1. Boot Installer [Enter]`) and enter the shell.
-2. Transfer `outerbase-installer.sh` from this repo to `/tmp/` (by removable media, http, `nc`, …).
-3. Run `outerbase-installer.sh` with the target drive name (without `/dev/`) as the only argument.
 
-       sh /tmp/outerbase-installer.sh ada0
+Use the script matching your FreeBSD release: `outerbase-install-14.sh` or `outerbase-install-15.sh`.
+
+1. Boot a stock FreeBSD installer image on the target machine (i.e. option `1. Boot Installer [Enter]`) and enter the shell.
+2. Copy the script to `/tmp/` (by removable media, http, `nc`, …).
+3. Run it with the target drive name (without `/dev/`) as the only argument.
+
+       sh /tmp/outerbase-install-15.sh ada0
 
 **That drive will have its partition table erased by `gpart destroy -F` in the process.**
 
@@ -71,11 +74,11 @@ To avoid any such mishaps, it's best to zero out the drive with `dd if=/dev/zero
 
 ## detailed description
 ### installing
-`outerbase-installer.sh` expects to be run from the shell of a stock FreeBSD installer image such as `FreeBSD-13.2-RELEASE-amd64-memstick.img`. When run without arguments, it just shows the output of `gpart show` to help in selecting the right drive and exits.
+`outerbase-install.sh` expects to be run from the shell of a stock FreeBSD installer image such as `FreeBSD-13.2-RELEASE-amd64-memstick.img`. When run without arguments, it just shows the output of `gpart show` to help in selecting the right drive and exits.
 
-To run the installation, execute `outerbase-installer.sh` with the name of the target drive (without "`/dev/`") as the only argument. For example, to use /dev/ada0 for the installation—**which will be erased by `gpart destroy -F` in the process!**—run:
+To run the installation, execute `outerbase-install.sh` with the name of the target drive (without "`/dev/`") as the only argument. For example, to use /dev/ada0 for the installation—**which will be erased by `gpart destroy -F` in the process!**—run:
 
-    sh outerbase-installer.sh ada0
+    sh outerbase-install.sh ada0
 
 **In setting up the system for booting, the script expects:**
 * an amd64 machine with UEFI or BIOS boot
@@ -240,10 +243,10 @@ With the FreeBSD source tree in place at `/usr/src`, and with the `src.conf` fro
 
 As the configuration is very minimal (mainly by avoiding the building of llvm, excluding any debug information and not building a custom kernel), the system builds rather quickly. During testing, it completed in around 10 minutes on an i7 with 4x&nbsp;3.6GHz and 16G of RAM.
 
-The resulting `base.txz` is created (in the case of the amd64 arch) at `/usr/obj/usr/src/amd64.amd64/release/base.txz`. To avoid confusion, it's best to rename it to `outerbase.txz` for use with `outerbase-installer.sh`.
+The resulting `base.txz` is created (in the case of the amd64 arch) at `/usr/obj/usr/src/amd64.amd64/release/base.txz`. To avoid confusion, it's best to rename it to `outerbase.txz` for use with `outerbase-install.sh`.
 
 #### installing with custom minimal outer base
-In `outerbase-installer.sh`, set the `outerbasetxz` variable to the location of your `outerbase.txz`. It will then be used for installing the outer base. (The inner base will always use the stock `/usr/freebsd-dist/base.txz` instead.) The install script exits if `outerbasetxz` is set to a path that does not exist.
+In `outerbase-install.sh`, set the `outerbasetxz` variable to the location of your `outerbase.txz`. It will then be used for installing the outer base. (The inner base will always use the stock `/usr/freebsd-dist/base.txz` instead.) The install script exits if `outerbasetxz` is set to a path that does not exist.
 
 Your `outerbase.txz` can be in any type of readable location:
 
@@ -277,13 +280,13 @@ Then, the file system can be mounted for writing and copying `outerbase.txz` ont
     mount /dev/da0s2a /mnt/
     cp outerbase.txz /mnt/usr/freebsd-dist/
 
-While you're at it, you can also copy along `outerbase-installer.sh`. Make sure to set
+While you're at it, you can also copy along `outerbase-install.sh`. Make sure to set
 
     outerbasetxz=/usr/freebsd-dist/outerbase.txz
 
-in `outerbase-installer.sh` so it will find your `outerbase.txz`.
+in `outerbase-install.sh` so it will find your `outerbase.txz`.
 
-Note that the installer mounts its main partition read-only. If you copy `outerbase-installer.sh` to the installer image, but then you need to edit it before running: copy it to `/tmp`, edit and run the copy.
+Note that the installer mounts its main partition read-only. If you copy `outerbase-install.sh` to the installer image, but then you need to edit it before running: copy it to `/tmp`, edit and run the copy.
 
 ### Update procedure
 #### stock outer base
